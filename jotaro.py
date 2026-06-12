@@ -35,7 +35,9 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
 from ai.brain import Brain, OllamaUnavailable
+from ai.excel_tools import EXCEL_TOOL_SPECS, EXCEL_WRITE_TOOLS, make_excel_dispatcher
 from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, make_fs_dispatcher
+from ai.shell_tools import SHELL_TOOL_SPECS, SHELL_WRITE_TOOLS, make_shell_dispatcher
 from ai.prompts import SYSTEM_FS
 from ai.specialists import Supervisor
 from config import load_config
@@ -130,8 +132,14 @@ def _on_tool(name: str, args: dict) -> None:
 
 
 def _confirm(name: str, args: dict) -> bool:
-    arg_s = ", ".join(f"{k}={_short(v)}" for k, v in args.items())
-    console.print(Text.assemble(("⏺ ", CORAL), (name, "bold"), (f"({arg_s})", MUTED)))
+    if name == "run_command":
+        # show the FULL command (never truncated) via Text so any [brackets] aren't
+        # parsed as markup — the user must see exactly what will run.
+        console.print(Text.assemble(("⏺ ", CORAL), ("run_command  ", "bold"),
+                                    (str(args.get("command", "")), "yellow")))
+    else:
+        arg_s = ", ".join(f"{k}={_short(v)}" for k, v in args.items())
+        console.print(Text.assemble(("⏺ ", CORAL), (name, "bold"), (f"({arg_s})", MUTED)))
     ans = console.input(f"  [{MUTED}]⎿  proceed? \\[y/N][/] ")
     return ans.strip().lower() in ("y", "yes")
 
@@ -139,9 +147,22 @@ def _confirm(name: str, args: dict) -> bool:
 def build_brain(cfg, db: Database, workspace: str | None) -> Brain:
     if workspace:
         base = Path(workspace).resolve()
+        fs_d, xl_d, sh_d = (make_fs_dispatcher(base), make_excel_dispatcher(base),
+                            make_shell_dispatcher(base))
+
+        def dispatcher(name: str, args: dict):
+            if name.startswith("excel_"):
+                return xl_d(name, args)
+            if name == "run_command":
+                return sh_d(name, args)
+            return fs_d(name, args)
+
         return Brain.from_config(
-            cfg, db, system=SYSTEM_FS, tools=FS_TOOL_SPECS,
-            dispatcher=make_fs_dispatcher(base), confirm_tools=WRITE_TOOLS, confirm=_confirm,
+            cfg, db, system=SYSTEM_FS,
+            tools=FS_TOOL_SPECS + EXCEL_TOOL_SPECS + SHELL_TOOL_SPECS,
+            dispatcher=dispatcher,
+            confirm_tools=WRITE_TOOLS | EXCEL_WRITE_TOOLS | SHELL_WRITE_TOOLS,
+            confirm=_confirm,
         )
     return Brain.from_config(cfg, db)
 

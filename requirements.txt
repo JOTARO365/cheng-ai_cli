@@ -18,6 +18,9 @@ pywin32>=306 ; platform_system == "Windows"
 wmi>=1.5 ; platform_system == "Windows"
 ldap3>=2.9
 
+# Excel file tools (--workspace mode)
+openpyxl>=3.1
+
 # Alerts
 requests>=2.31
 
