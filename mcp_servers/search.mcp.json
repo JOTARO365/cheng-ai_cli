@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "search": {
+      "command": "python",
+      "args": ["mcp_servers/search_server.py"],
+      "env": {
+        "_comment": "default = DuckDuckGo (free, no setup). For REAL Google, add the two lines below:",
+        "GOOGLE_API_KEY": "",
+        "GOOGLE_CSE_ID": ""
+      }
+    }
+  }
+}
