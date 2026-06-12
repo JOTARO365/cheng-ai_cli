@@ -5,7 +5,13 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
-## CURRENT STATUS
+## CURRENT STATUS (Phase-1 product loop now COMPLETE end-to-end)
+🟢 Collector → Rule Engine → REAL AI analysis (ai/escalate.py) + REAL alert dispatch
+   (alert/dispatch.py, opt-in/no-op) — verified by sandbox: AI root-cause stored as
+   source=ai events, alerts logged (no channel configured = nothing leaves the box). 96 tests.
+   alert/dispatch.py = on_alert; ai/escalate.py Analyst.on_ai = on_ai (replaced fake_alert/fake_ai).
+
+## (history) CURRENT STATUS
 🟢 In progress : v0.1.0 — collectors + Rule Engine + sandbox + tool server + JOTARO CLI (34 tests)
 
 ---- 2026-06-12 — JOTARO AI CLI (terminal tool-calling agent) + live stack up ----
