@@ -32,6 +32,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import InMemoryHistory
 
 from ai.brain import Brain, OllamaUnavailable, _CJK
@@ -94,6 +96,29 @@ def dispatch_command(text: str) -> str:
     if c == "/skills" or c.startswith("/skills "):
         return "skills"
     return "ask"
+
+
+SLASH_CMDS = [
+    ("/help", "show commands"),
+    ("/status", "system status (no model)"),
+    ("/model", "list / switch the model"),
+    ("/remember", "save a durable fact"),
+    ("/memory", "list what's remembered"),
+    ("/skills", "list · on|off · load a dir"),
+    ("/clear", "reset the conversation"),
+    ("/exit", "quit"),
+]
+
+
+class SlashCompleter(Completer):
+    """Pop up the /commands (with descriptions) when the line starts with '/'."""
+    def get_completions(self, document, complete_event):
+        token = document.text_before_cursor.split(" ", 1)[0]
+        if not token.startswith("/"):
+            return
+        for cmd, desc in SLASH_CMDS:
+            if cmd.startswith(token):
+                yield Completion(cmd, start_position=-len(token), display=cmd, display_meta=desc)
 
 
 def _short(v: object, n: int = 60) -> str:
@@ -321,11 +346,14 @@ def main() -> None:
         console.print(Align.center(Text("TEAM ROUTING: security · network · service",
                                         style="bold cyan")))
     history: list = [] if team else brain.new_history()
-    session: PromptSession = PromptSession(history=InMemoryHistory())
+    session: PromptSession = PromptSession(
+        history=InMemoryHistory(), completer=SlashCompleter(), complete_while_typing=True,
+        bottom_toolbar=lambda: HTML("  <b>/</b> commands   <b>↑↓</b> history   <b>Ctrl-D</b> quit  "),
+    )
 
     while True:
         try:
-            text = session.prompt("\nit › ").strip()
+            text = session.prompt(HTML("\n<ansibrightmagenta><b>❯</b></ansibrightmagenta> ")).strip()
         except (EOFError, KeyboardInterrupt):
             console.print("\n[dim cyan]session ended.[/dim cyan]")
             break

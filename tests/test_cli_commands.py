@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from jotaro import dispatch_command
+from prompt_toolkit.document import Document
+
+from jotaro import SlashCompleter, dispatch_command
 
 
 @pytest.mark.parametrize("text, action", [
@@ -25,3 +27,11 @@ from jotaro import dispatch_command
 ])
 def test_dispatch_command(text: str, action: str) -> None:
     assert dispatch_command(text) == action
+
+
+def test_slash_completer():
+    c = SlashCompleter()
+    on_slash = [x.text for x in c.get_completions(Document("/"), None)]
+    assert "/help" in on_slash and "/skills" in on_slash
+    assert [x.text for x in c.get_completions(Document("/me"), None)] == ["/memory"]
+    assert list(c.get_completions(Document("hello"), None)) == []   # non-slash → no menu
