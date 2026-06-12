@@ -11,6 +11,19 @@ Updated  : 2026-06-10
    source=ai events, alerts logged (no channel configured = nothing leaves the box). 96 tests.
    alert/dispatch.py = on_alert; ai/escalate.py Analyst.on_ai = on_ai (replaced fake_alert/fake_ai).
 
+---- 2026-06-12 — Skills subsystem + section-level loading ----
+✅ ai/skills.py: skill.md runbooks, progressive loading. Front-matter name+description
+   injected as the trigger; full body via load_skill on demand. discover_skills reads
+   one or many dirs (flat *.md or Claude-style <name>/SKILL.md, rglob) — `~/.claude` finds 65.
+   Toggle on/off. jotaro --skills DIR / --no-skills + /skills (list/on|off/load a dir).
+   Brain auto-loads (default ./skills); Supervisor propagates to specialists.
+✅ Section-level loading (context mgmt): split_sections + select_skill_content(skill, query)
+   returns whole skill if small, else only keyword-matching section(s) + a TOC. On a real
+   43KB / 53-section .claude skill → ~1.7KB (97% less context). Pure Python — NOT 42 C FFI
+   (substr/gnl = Python str ops already) and NOT LangGraph (deterministic keyword match). 106 tests.
+💡 Standing principle reaffirmed: reuse high-level strategy (section loading, Textual, Open WebUI)
+   but NOT primitives (C substr/gnl, hand-built UI) — Python/open-source libs already provide them.
+
 ## (history) CURRENT STATUS
 🟢 In progress : v0.1.0 — collectors + Rule Engine + sandbox + tool server + JOTARO CLI (34 tests)
 
