@@ -150,6 +150,22 @@ Updated  : 2026-06-10
   (tools) is the enabler, not parameter count. Size only shows up in tool-SELECTION (the 1/8
   miss). So "3B+harness ≈ N B" has no single answer: fact-accuracy ≈ big model; planning ≈ 3B.
 
+---- 2026-06-12 — Streaming/UX + Excel specialist + Memory (learn from user) ----
+✅ Streaming: Brain on_token (Ollama stream=true) → jotaro streams tokens (CJK-stripped),
+  ⏺ tool / ⎿ result lines, transient "· thinking/running…" status, /model (list+switch),
+  read-only grep/glob (find_files/search_text). UI = Claude-Code style.
+✅ Excel specialist: smart read-only tools (excel_find_rows by column value, excel_aggregate
+  sum/avg/min/max/count, excel_read_range, header-aware excel_read) — pushes filtering/math
+  into code. SYSTEM_FS Excel procedure. eval --excel. RESULT: tool-selection 0→100% (the
+  sheet=HR miss FIXED); fact 25% (mostly scorer number-format artifact + 3B phrasing).
+✅ Memory subsystem (learn from user across sessions): db memory table + add/search/recent/
+  forget; remember/recall tools merged into EVERY Brain (handled in _execute); new_history()
+  injects recent memories into the system prompt; jotaro /remember + /memory. Learning lives
+  in the harness store, not the frozen model. LIVE: stored "SRV1-FILE is print server" →
+  recalled correctly next run. 91 tests. Pushed (2d7aa57).
+⏳ STILL PENDING: item 2 product integration (specialist→Rule Engine escalation replacing
+  fake_ai + real alert/dispatch.py Line/Teams/Email, opt-in) — touches live-system/deps.
+
 ## (earlier) Chatbot tool server status
 🟢 collectors + Rule Engine + sandbox + chatbot tool server
 📍 Next        : install Ollama + Open WebUI to try the chatbot live (see docs/setup.md);
