@@ -14,7 +14,7 @@ class _FakeDDGS:
     def __exit__(self, *a):
         return False
 
-    def text(self, query, max_results=5):
+    def text(self, query, max_results=5, **kwargs):
         return [{"title": "T", "href": "http://x", "body": "snip"}][:max_results]
 
 

@@ -59,8 +59,11 @@ def _google_scrape(query: str, n: int) -> list[dict]:
 def _ddg(query: str, n: int) -> list[dict]:
     from ddgs import DDGS
     with DDGS() as d:
+        # google/bing backends are far cleaner than "auto"
+        rows = d.text(query, max_results=n, safesearch="moderate",
+                      backend="google, bing, duckduckgo")
         return [{"title": r.get("title"), "url": r.get("href"), "snippet": r.get("body")}
-                for r in d.text(query, max_results=n)]
+                for r in rows]
 
 
 def _backend() -> str:

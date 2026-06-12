@@ -82,7 +82,10 @@ def make_web_dispatcher(max_chars: int = 4000) -> Callable[[str, dict[str, Any]]
         try:
             from ddgs import DDGS
             with DDGS() as ddgs:
-                rows = list(ddgs.text(query, max_results=n))
+                # explicit Google/Bing backends give far cleaner results than "auto"
+                # (which sometimes returns junk); fall back through the chain.
+                rows = list(ddgs.text(query, max_results=n, safesearch="moderate",
+                                      backend="google, bing, duckduckgo"))
         except Exception as exc:  # network/parse — surface, don't crash the loop
             log.warning("web_search failed: %s", exc)
             return {"error": f"web search failed: {exc}"}
