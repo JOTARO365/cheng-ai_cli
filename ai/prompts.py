@@ -69,6 +69,14 @@ root-cause read: the most likely cause, and the single best next step for IT. Tw
 three sentences. Do not speculate beyond the event provided. Reply in Thai.
 """
 
+# Summarizer — used by the fan-out helper (one sub-agent per chunk, isolated context).
+SYSTEM_SUMMARIZER = """\
+You summarize text concisely and faithfully — keep the key facts, names, and numbers, \
+drop filler. Reply in the SAME language as the text (Thai or English ONLY, never \
+Chinese). Output only the summary, no preamble.
+"""
+
+
 # Verifier / critic — checks a draft answer is grounded before it's delivered.
 SYSTEM_VERIFIER = """\
 You are a strict fact-checker for an offline IT assistant. You are given a question, \

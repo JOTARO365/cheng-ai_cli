@@ -40,7 +40,8 @@ from ai.brain import Brain, OllamaUnavailable, _CJK
 from ai.excel_tools import EXCEL_TOOL_SPECS, EXCEL_WRITE_TOOLS, make_excel_dispatcher
 from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, make_fs_dispatcher
 from ai.shell_tools import SHELL_TOOL_SPECS, SHELL_WRITE_TOOLS, make_shell_dispatcher
-from ai.prompts import SYSTEM_FS
+from ai.parallel import fan_out_summarize
+from ai.prompts import SYSTEM_FS, SYSTEM_SUMMARIZER
 from ai.specialists import Supervisor
 from ai.verify import Verifier
 from config import load_config
@@ -60,6 +61,7 @@ HELP = f"""\
   [bold]/remember[/] save a durable fact:  /remember SRV1 is the print server
   [bold]/memory[/]   list what's remembered
   [bold]/skills[/]   list skills · /skills on|off · /skills <dir> (load local, e.g. ~/.claude)
+  [bold]/summarize[/] fan-out summarize a big file (chunk → sub-agents → merge)
   [bold]/clear[/]    clear the conversation context
   [bold]/exit[/]     quit  (or Ctrl-D)
 
@@ -95,6 +97,8 @@ def dispatch_command(text: str) -> str:
         return "memory"
     if c == "/skills" or c.startswith("/skills "):
         return "skills"
+    if c == "/summarize" or c.startswith("/summarize "):
+        return "summarize"
     return "ask"
 
 
@@ -105,6 +109,7 @@ SLASH_CMDS = [
     ("/remember", "save a durable fact"),
     ("/memory", "list what's remembered"),
     ("/skills", "list · on|off · load a dir"),
+    ("/summarize", "fan-out summarize a file"),
     ("/clear", "reset the conversation"),
     ("/exit", "quit"),
 ]
@@ -419,6 +424,30 @@ def main() -> None:
                               f"  ({len(names)} loaded)")
                 for nm in names:
                     console.print(f"  [{MUTED}]›[/] {nm}")
+            continue
+        if action == "summarize":
+            parts = text.split(maxsplit=1)
+            if len(parts) == 1:
+                console.print(f"[{MUTED}]usage: /summarize <path>[/]")
+                continue
+            p = Path(parts[1].strip())
+            if args.workspace and not p.is_absolute():
+                p = Path(args.workspace).resolve() / p
+            try:
+                content = p.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                console.print(f"[red]cannot read {p}:[/red] {exc}")
+                continue
+
+            def _factory():
+                return Brain.from_config(cfg, db, system=SYSTEM_SUMMARIZER, tools=[],
+                                         skills_enabled=False)
+
+            with console.status("[cyan]fan-out summarizing…[/cyan]", spinner="line"):
+                summary, n = fan_out_summarize(content, _factory)
+            console.print(Text.assemble(("⏺ ", CORAL), ("summarize ", "bold"),
+                          (f"{p.name} — {n} chunk(s) across sub-agents", MUTED)))
+            console.print(Markdown(summary or "_(empty)_"))
             continue
         if action == "clear":
             history = [] if team else brain.new_history()
