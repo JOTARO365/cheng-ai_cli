@@ -57,3 +57,27 @@ def test_sandbox_escape(ws):
 
 def test_write_tools_set():
     assert EXCEL_WRITE_TOOLS == {"excel_write_cell", "excel_append_row", "excel_create"}
+
+
+def test_find_rows(ws):
+    d = make_excel_dispatcher(ws)
+    d("excel_append_row", {"path": "book.xlsx", "sheet": "Data", "values": ["mary", 40]})
+    r = d("excel_find_rows", {"path": "book.xlsx", "column": "name", "equals": "JOHN"})
+    assert r["count"] == 1 and r["matches"][0]["age"] == 30   # case-insensitive match
+
+
+def test_find_rows_unknown_column(ws):
+    r = make_excel_dispatcher(ws)("excel_find_rows",
+                                  {"path": "book.xlsx", "column": "dept", "equals": "x"})
+    assert "column not found" in r["error"] and "name" in str(r["error"])
+
+
+def test_aggregate_and_range_and_headers(ws):
+    d = make_excel_dispatcher(ws)
+    d("excel_append_row", {"path": "book.xlsx", "sheet": "Data", "values": ["mary", 40]})
+    agg = d("excel_aggregate", {"path": "book.xlsx", "column": "age", "op": "sum"})
+    assert agg["value"] == 70.0                                   # 30 + 40
+    assert d("excel_aggregate", {"path": "book.xlsx", "column": "age", "op": "count"})["value"] == 2
+    assert d("excel_read", {"path": "book.xlsx"})["headers"] == ["name", "age"]
+    rng = d("excel_read_range", {"path": "book.xlsx", "range": "A1:B1"})
+    assert rng["rows"] == [["name", "age"]]

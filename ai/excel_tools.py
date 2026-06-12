@@ -102,6 +102,60 @@ EXCEL_TOOL_SPECS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "excel_find_rows",
+            "description": (
+                "Find rows where a COLUMN equals a value (the sheet's first row is treated "
+                "as headers). Use this to answer 'who/which rows have X' — e.g. column='dept', "
+                "equals='HR'. Do NOT pass a column value as a sheet name."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "sheet": {"type": "string", "description": "sheet name (default: first sheet)"},
+                    "column": {"type": "string", "description": "header name to match on"},
+                    "equals": {"description": "value the column must equal (case-insensitive)"},
+                },
+                "required": ["path", "column", "equals"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "excel_aggregate",
+            "description": "Compute sum/avg/min/max/count over a numeric COLUMN (by header name).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "sheet": {"type": "string"},
+                    "column": {"type": "string", "description": "header name of the column"},
+                    "op": {"type": "string", "enum": ["sum", "avg", "min", "max", "count"]},
+                },
+                "required": ["path", "column", "op"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "excel_read_range",
+            "description": "Read a specific A1-style cell range, e.g. 'A1:C10'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "sheet": {"type": "string"},
+                    "range": {"type": "string", "description": "A1-style range, e.g. 'A1:C10'"},
+                },
+                "required": ["path", "range"],
+            },
+        },
+    },
 ]
 
 
@@ -111,6 +165,27 @@ def _pick_sheet(wb: Any, name: str | None) -> Any:
     if name not in wb.sheetnames:
         raise KeyError(name)
     return wb[name]
+
+
+def _load_table(p: Any, sheet_name: str | None) -> tuple[str, list[str], list[list]]:
+    """Return (sheet_title, headers, data_rows) — the first row is treated as headers."""
+    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+    try:
+        ws = _pick_sheet(wb, sheet_name)
+        title = ws.title
+        rows = [list(r) for r in ws.iter_rows(values_only=True)]
+    finally:
+        wb.close()
+    headers = [("" if c is None else str(c)) for c in rows[0]] if rows else []
+    return title, headers, rows[1:]
+
+
+def _col_index(headers: list[str], column: str) -> int:
+    target = str(column).strip().lower()
+    for i, h in enumerate(headers):
+        if h.strip().lower() == target:
+            return i
+    return -1
 
 
 def make_excel_dispatcher(base_dir: str | Path) -> Callable[[str, dict[str, Any]], Any]:
@@ -143,6 +218,7 @@ def make_excel_dispatcher(base_dir: str | Path) -> Callable[[str, dict[str, Any]
                             break
                         rows.append([("" if c is None else c) for c in row])
                     return {"path": str(p.relative_to(base)), "sheet": ws.title,
+                            "headers": rows[0] if rows else [],
                             "rows": rows, "truncated": ws.max_row > limit}
                 finally:
                     wb.close()
@@ -180,6 +256,70 @@ def make_excel_dispatcher(base_dir: str | Path) -> Callable[[str, dict[str, Any]
                 wb.save(p)
                 log.warning("xlsx WRITE excel_create %s", p)
                 return {"status": "created", "path": str(p.relative_to(base))}
+
+            if name == "excel_find_rows":
+                p = _safe(base, str(args.get("path", "")))
+                title, headers, data = _load_table(p, args.get("sheet"))
+                idx = _col_index(headers, str(args.get("column", "")))
+                if idx < 0:
+                    return {"error": f"column not found; available headers: {headers}"}
+                want = str(args.get("equals", "")).strip().lower()
+                matches = []
+                for row in data:
+                    cell = row[idx] if idx < len(row) else None
+                    if str("" if cell is None else cell).strip().lower() == want:
+                        matches.append({h: ("" if v is None else v)
+                                        for h, v in zip(headers, row)})
+                        if len(matches) >= 100:
+                            break
+                return {"sheet": title, "column": args.get("column"),
+                        "equals": args.get("equals"), "matches": matches, "count": len(matches)}
+
+            if name == "excel_aggregate":
+                p = _safe(base, str(args.get("path", "")))
+                title, headers, data = _load_table(p, args.get("sheet"))
+                idx = _col_index(headers, str(args.get("column", "")))
+                if idx < 0:
+                    return {"error": f"column not found; available headers: {headers}"}
+                op = str(args.get("op", "count")).lower()
+                col = [row[idx] for row in data if idx < len(row) and row[idx] is not None]
+                nums = [float(v) for v in col if isinstance(v, (int, float))]
+                if op == "count":
+                    val: Any = len(col)
+                elif not nums:
+                    return {"error": "no numeric values in that column"}
+                elif op == "sum":
+                    val = sum(nums)
+                elif op == "avg":
+                    val = sum(nums) / len(nums)
+                elif op == "min":
+                    val = min(nums)
+                elif op == "max":
+                    val = max(nums)
+                else:
+                    return {"error": f"unknown op {op!r}"}
+                return {"sheet": title, "column": args.get("column"), "op": op,
+                        "value": val, "n": len(col)}
+
+            if name == "excel_read_range":
+                p = _safe(base, str(args.get("path", "")))
+                rng = str(args.get("range", ""))
+                wb = openpyxl.load_workbook(p, data_only=True)
+                try:
+                    ws = _pick_sheet(wb, args.get("sheet"))
+                    cells = ws[rng]
+                    rows = []
+                    if not isinstance(cells, tuple):       # single cell
+                        rows = [["" if cells.value is None else cells.value]]
+                    else:
+                        for r in cells:
+                            if isinstance(r, tuple):
+                                rows.append([("" if c.value is None else c.value) for c in r])
+                            else:
+                                rows.append(["" if r.value is None else r.value])
+                    return {"sheet": ws.title, "range": rng, "rows": rows}
+                finally:
+                    wb.close()
 
             return {"error": f"unknown tool {name!r}"}
         except PathEscape as exc:

@@ -35,14 +35,59 @@ BARE_SYSTEM = ("You are a helpful IT assistant. Answer the user's question direc
                "and concisely. Reply in the question's language.")
 
 
+def _run_excel(cfg, model: str) -> None:
+    """Excel-specialist eval: seed a workbook, build a workspace brain (fs+excel tools),
+    run the Excel Q&A. Cases are read-only so no confirm is needed."""
+    from ai.excel_tools import EXCEL_TOOL_SPECS, make_excel_dispatcher
+    from ai.fs_tools import FS_TOOL_SPECS, make_fs_dispatcher
+    from ai.prompts import SYSTEM_FS
+    from eval.excel_cases import EXCEL_CASES, score as xscore, seed_xlsx
+
+    ws = Path(tempfile.gettempdir()) / "jotaro_eval_xlsx"
+    ws.mkdir(parents=True, exist_ok=True)
+    seed_xlsx(str(ws / "staff.xlsx"))
+    fs_d, xl_d = make_fs_dispatcher(ws), make_excel_dispatcher(ws)
+
+    def disp(name, a):
+        return xl_d(name, a) if name.startswith("excel_") else fs_d(name, a)
+
+    brain = Brain(cfg.ollama_host, model, Database(ws / "_eval.db"), system=SYSTEM_FS,
+                  tools=FS_TOOL_SPECS + EXCEL_TOOL_SPECS, dispatcher=disp)
+    if not brain.is_available():
+        console.print("[red]Ollama not reachable.[/red]")
+        return
+
+    table = Table(title=f"excel eval · model={model} · {len(EXCEL_CASES)} cases")
+    table.add_column("question", overflow="fold", max_width=44)
+    table.add_column("tool ✓", justify="center")
+    table.add_column("fact ✓", justify="center")
+    fok = tok = 0
+    mark = lambda ok: "[green]✓[/]" if ok else "[red]✗[/]"  # noqa: E731
+    for case in EXCEL_CASES:
+        tools: list[str] = []
+        ans = brain.ask(brain.new_history(), case["q"], on_tool=lambda n, a: tools.append(n))
+        f_ok, t_ok = xscore(case, ans, tools)
+        fok += f_ok
+        tok += t_ok
+        table.add_row(case["q"], mark(t_ok), mark(f_ok))
+    console.print(table)
+    n = len(EXCEL_CASES)
+    console.print(f"\n[bold]EXCEL[/bold]  tool: [cyan]{tok}/{n}[/] ({100*tok//n}%)  "
+                  f"fact: [cyan]{fok}/{n}[/] ({100*fok//n}%)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="JOTARO eval — harness lift on a local model")
     ap.add_argument("--bare", action="store_true", help="also run the model with NO tools")
+    ap.add_argument("--excel", action="store_true", help="run the Excel-specialist eval instead")
     ap.add_argument("--model", help="override OLLAMA_MODEL")
     args = ap.parse_args()
 
     cfg = load_config()
     model = args.model or cfg.ollama_model
+    if args.excel:
+        _run_excel(cfg, model)
+        return
     db = Database(Path(tempfile.gettempdir()) / "jotaro_eval.db")
     seed(db)
 
