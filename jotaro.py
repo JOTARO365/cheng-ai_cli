@@ -311,8 +311,9 @@ def main() -> None:
     parser.add_argument("--no-skills", action="store_true", help="start with skills off")
     parser.add_argument("--verify", action="store_true",
                         help="check each answer for grounding/hallucination before showing it (slower, no streaming)")
-    parser.add_argument("--web", action="store_true",
-                        help="enable web_search (DuckDuckGo) in workspace mode — opt-in internet")
+    parser.add_argument("--web", action="store_true", help=argparse.SUPPRESS)  # now default-on in workspace
+    parser.add_argument("--no-web", action="store_true",
+                        help="disable web search in workspace mode (workspace is online by default)")
     parser.add_argument("--mcp", metavar="CONFIG",
                         help="connect to MCP servers from a JSON config (their tools become callable)")
     args = parser.parse_args()
@@ -323,10 +324,11 @@ def main() -> None:
     skill_kw = {"skills_dir": args.skills or DEFAULT_SKILLS_DIR,
                 "skills_enabled": not args.no_skills}
     team = Supervisor(cfg, db, **skill_kw) if args.team else None
-    brain = None if team else build_brain(cfg, db, args.workspace, web=args.web,
+    web = bool(args.workspace) and not args.no_web          # workspace is ONLINE by default
+    brain = None if team else build_brain(cfg, db, args.workspace, web=web,
                                           mcp_config=args.mcp, **skill_kw)
     verifier = Verifier(cfg, db) if args.verify else None
-    web_enabled = bool(args.web) and brain is not None      # auto web-search fallback on
+    web_enabled = web and brain is not None                 # auto web-search fallback on
     subtitle = ("team · security / network / service" if team
                 else f"workspace · {Path(args.workspace).resolve()}" if args.workspace
                 else "read-only · offline")
