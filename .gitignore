@@ -1,0 +1,30 @@
+# secrets & local config
+.env
+*.env
+.webui_secret_key
+.claude/settings.local.json
+
+# runtime / demo artifacts (sandbox/*.py source stays tracked)
+/workspace/
+sandbox/ws_demo/
+sandbox/alias_try/
+D:/
+openwebui-venv/
+
+# data & logs
+data/
+*.db
+*.sqlite
+*.sqlite3
+logs/
+*.log
+
+# python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/

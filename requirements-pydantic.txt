@@ -1,0 +1,5 @@
+# OPTIONAL extra — the PydanticAI "rich runtime" (ai/pydantic_agent.py): native
+# human-in-the-loop tool approval + MCP, driving the same fs tools. The default
+# runtime (ai/brain.py) does NOT need this. Install where you want it:
+#     pip install -r requirements-pydantic.txt
+pydantic-ai-slim[openai]>=1.0

@@ -1,0 +1,8 @@
+# OPTIONAL extra — only needed to run the LangChain/LangGraph adapter
+# (ai/langchain_adapter.py). The default runtime (ai/brain.py) does NOT need these;
+# the shipped offline product stays light. Install where a target system wants to
+# drive our tools/prompts inside LangChain:
+#     pip install -r requirements-langchain.txt
+langchain>=1.0
+langgraph>=1.0
+langchain-ollama>=0.3

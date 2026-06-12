@@ -1,0 +1,25 @@
+# Core
+python-dotenv>=1.0
+
+# CLI
+rich>=13.7
+prompt_toolkit>=3.0
+
+# Chat UI = Open WebUI (separate, open-source). We expose live IT data to it via a
+# FastAPI OpenAPI "tool server" (webtools/server.py) that Open WebUI registers.
+fastapi>=0.110
+uvicorn>=0.29
+
+# AI brain (local Ollama via HTTP)
+httpx>=0.27
+
+# Windows AD / Event Log / WMI  (Windows only — installed on the agent host)
+pywin32>=306 ; platform_system == "Windows"
+wmi>=1.5 ; platform_system == "Windows"
+ldap3>=2.9
+
+# Alerts
+requests>=2.31
+
+# Dev / tests
+pytest>=8.0
