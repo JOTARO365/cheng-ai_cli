@@ -56,6 +56,7 @@ HELP = f"""\
   [bold]/model[/]    show models / switch:  /model qwen2.5:14b
   [bold]/remember[/] save a durable fact:  /remember SRV1 is the print server
   [bold]/memory[/]   list what's remembered
+  [bold]/skills[/]   list skills · /skills on|off · /skills <dir> (load local, e.g. ~/.claude)
   [bold]/clear[/]    clear the conversation context
   [bold]/exit[/]     quit  (or Ctrl-D)
 
@@ -89,6 +90,8 @@ def dispatch_command(text: str) -> str:
         return "remember"
     if c == "/memory":
         return "memory"
+    if c == "/skills" or c.startswith("/skills "):
+        return "skills"
     return "ask"
 
 
@@ -202,7 +205,7 @@ def _confirm(name: str, args: dict) -> bool:
     return ans.strip().lower() in ("y", "yes")
 
 
-def build_brain(cfg, db: Database, workspace: str | None) -> Brain:
+def build_brain(cfg, db: Database, workspace: str | None, **skill_kw) -> Brain:
     if workspace:
         base = Path(workspace).resolve()
         fs_d, xl_d, sh_d = (make_fs_dispatcher(base), make_excel_dispatcher(base),
@@ -220,9 +223,9 @@ def build_brain(cfg, db: Database, workspace: str | None) -> Brain:
             tools=FS_TOOL_SPECS + EXCEL_TOOL_SPECS + SHELL_TOOL_SPECS,
             dispatcher=dispatcher,
             confirm_tools=WRITE_TOOLS | EXCEL_WRITE_TOOLS | SHELL_WRITE_TOOLS,
-            confirm=_confirm,
+            confirm=_confirm, **skill_kw,
         )
-    return Brain.from_config(cfg, db)
+    return Brain.from_config(cfg, db, **skill_kw)
 
 
 def main() -> None:
@@ -234,12 +237,18 @@ def main() -> None:
                              "Bare --workspace = current folder; or pass a DIR.")
     parser.add_argument("--team", action="store_true",
                         help="route each question to a specialist agent (security / network / service)")
+    parser.add_argument("--skills", metavar="DIR",
+                        help="load skill.md runbooks from DIR (e.g. a local ~/.claude). Default: ./skills")
+    parser.add_argument("--no-skills", action="store_true", help="start with skills off")
     args = parser.parse_args()
 
     cfg = load_config()
     db = Database(cfg.db_path)
-    team = Supervisor(cfg, db) if args.team else None
-    brain = None if team else build_brain(cfg, db, args.workspace)
+    from ai.skills import DEFAULT_SKILLS_DIR
+    skill_kw = {"skills_dir": args.skills or DEFAULT_SKILLS_DIR,
+                "skills_enabled": not args.no_skills}
+    team = Supervisor(cfg, db, **skill_kw) if args.team else None
+    brain = None if team else build_brain(cfg, db, args.workspace, **skill_kw)
     subtitle = ("team · security / network / service" if team
                 else f"workspace · {Path(args.workspace).resolve()}" if args.workspace
                 else "read-only · offline")
@@ -329,6 +338,23 @@ def main() -> None:
                 console.print(f"[{MUTED}](nothing remembered yet — /remember <fact>)[/]")
             for m in mems:
                 console.print(f"  [{MUTED}]#{m['id']}[/] {m['text']}")
+            continue
+        if action == "skills":
+            obj = team if team else brain
+            parts = text.split(maxsplit=1)
+            if len(parts) == 2 and parts[1].lower() in ("on", "off"):
+                obj.set_skills_enabled(parts[1].lower() == "on")
+                console.print(f"[{MUTED}]skills →[/] {'on' if obj.skills_enabled else 'off'}")
+            elif len(parts) == 2:                       # a directory → load local skills
+                n = obj.load_skills_from(parts[1].strip())
+                console.print(f"[{MUTED}]loaded[/] {n} skill(s) from {parts[1].strip()}")
+                history = [] if team else brain.new_history()   # refresh injected catalog
+            else:
+                names = obj.skill_names()
+                console.print(f"[{MUTED}]skills:[/] {'on' if obj.skills_enabled else 'off'}"
+                              f"  ({len(names)} loaded)")
+                for nm in names:
+                    console.print(f"  [{MUTED}]›[/] {nm}")
             continue
         if action == "clear":
             history = [] if team else brain.new_history()

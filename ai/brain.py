@@ -26,6 +26,7 @@ from typing import Any, Callable
 import httpx
 
 from ai.memory_tools import MEMORY_TOOL_SPECS
+from ai.skills import DEFAULT_SKILLS_DIR, SKILL_TOOL_SPECS, catalog, discover_skills
 from ai.prompts import SYSTEM_CHAT
 from ai.tools import TOOL_SPECS, dispatch as _db_dispatch
 from storage.db import Database
@@ -65,6 +66,8 @@ class Brain:
         timeout: float = 120.0,
         max_steps: int = 6,
         temperature: float = 0.2,
+        skills_dir: Any = DEFAULT_SKILLS_DIR,
+        skills_enabled: bool = True,
     ) -> None:
         self.host = host.rstrip("/")
         self.model = model
@@ -72,6 +75,11 @@ class Brain:
         self.system = system
         # every brain also gets the memory tools (remember/recall), handled in _execute
         self.tools = list(TOOL_SPECS if tools is None else tools) + MEMORY_TOOL_SPECS
+        # progressive-loading skills (skill.md runbooks) — toggleable
+        self._skills = discover_skills(skills_dir)
+        if self._skills:
+            self.tools = self.tools + SKILL_TOOL_SPECS
+        self.skills_enabled = skills_enabled and bool(self._skills)
         # default dispatcher = the read-only IT-monitor tools over the DB
         self._dispatcher: Dispatcher = dispatcher or (lambda n, a: _db_dispatch(n, a, db))
         self.confirm_tools = set(confirm_tools)
@@ -92,7 +100,28 @@ class Brain:
         if mems:
             text += "\n\nThings the user told you to remember:\n" + "\n".join(
                 f"- {m['text']}" for m in reversed(mems))
+        if self.skills_enabled and self._skills:
+            text += ("\n\nAvailable skills (call load_skill(name) when one matches the "
+                     "task, then follow it):\n" + catalog(self._skills))
         return [{"role": "system", "content": text}]
+
+    # ---- skills control ---------------------------------------------------
+    def set_skills_enabled(self, on: bool) -> bool:
+        self.skills_enabled = bool(on) and bool(self._skills)
+        return self.skills_enabled
+
+    def load_skills_from(self, skills_dir: Any) -> int:
+        """Pull skill.md files from a local directory and enable them. Returns count."""
+        self._skills = discover_skills(skills_dir)
+        if self._skills and not any(
+            t["function"]["name"] == "load_skill" for t in self.tools
+        ):
+            self.tools = self.tools + SKILL_TOOL_SPECS
+        self.skills_enabled = bool(self._skills)
+        return len(self._skills)
+
+    def skill_names(self) -> list[str]:
+        return list(self._skills)
 
     def is_available(self) -> bool:
         try:
@@ -161,6 +190,13 @@ class Brain:
             return {"status": "remembered", "id": self.db.add_memory(text)}
         if name == "recall":
             return {"matches": self.db.search_memory(str(args.get("query", "")))}
+        if name == "load_skill":
+            if not self.skills_enabled:
+                return {"error": "skills are turned off"}
+            sk = self._skills.get(str(args.get("name", "")))
+            if not sk:
+                return {"error": f"unknown skill; available: {list(self._skills)}"}
+            return {"name": sk.name, "instruction": sk.body}
         if name in self.confirm_tools:
             approved = self.confirm(name, args) if self.confirm else False
             if not approved:

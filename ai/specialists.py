@@ -59,14 +59,32 @@ SPECIALISTS: list[Specialist] = [
 class Supervisor:
     """Holds one Brain per specialist (+ a generalist) and routes questions."""
 
-    def __init__(self, cfg: Any, db: Database) -> None:
+    def __init__(self, cfg: Any, db: Database, **brain_kw: Any) -> None:
         self._brains: dict[str, Brain] = {
-            s.name: Brain.from_config(cfg, db, system=s.system, tools=s.tools)
+            s.name: Brain.from_config(cfg, db, system=s.system, tools=s.tools, **brain_kw)
             for s in SPECIALISTS
         }
         # generalist fallback: full persona + all tools
-        self._brains["general"] = Brain.from_config(cfg, db, system=SYSTEM_CHAT)
+        self._brains["general"] = Brain.from_config(cfg, db, system=SYSTEM_CHAT, **brain_kw)
         self._db = db
+
+    def set_skills_enabled(self, on: bool) -> bool:
+        for b in self._brains.values():
+            b.set_skills_enabled(on)
+        return self._brains["general"].skills_enabled
+
+    def load_skills_from(self, skills_dir: Any) -> int:
+        n = 0
+        for b in self._brains.values():
+            n = b.load_skills_from(skills_dir)
+        return n
+
+    def skill_names(self) -> list[str]:
+        return self._brains["general"].skill_names()
+
+    @property
+    def skills_enabled(self) -> bool:
+        return self._brains["general"].skills_enabled
 
     def is_available(self) -> bool:
         return self._brains["general"].is_available()
