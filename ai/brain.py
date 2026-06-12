@@ -25,6 +25,7 @@ from typing import Any, Callable
 
 import httpx
 
+from ai.memory_tools import MEMORY_TOOL_SPECS
 from ai.prompts import SYSTEM_CHAT
 from ai.tools import TOOL_SPECS, dispatch as _db_dispatch
 from storage.db import Database
@@ -69,7 +70,8 @@ class Brain:
         self.model = model
         self.db = db
         self.system = system
-        self.tools = TOOL_SPECS if tools is None else tools
+        # every brain also gets the memory tools (remember/recall), handled in _execute
+        self.tools = list(TOOL_SPECS if tools is None else tools) + MEMORY_TOOL_SPECS
         # default dispatcher = the read-only IT-monitor tools over the DB
         self._dispatcher: Dispatcher = dispatcher or (lambda n, a: _db_dispatch(n, a, db))
         self.confirm_tools = set(confirm_tools)
@@ -83,7 +85,14 @@ class Brain:
         return cls(cfg.ollama_host, cfg.ollama_model, db, **kw)
 
     def new_history(self) -> list[dict[str, Any]]:
-        return [{"role": "system", "content": self.system}]
+        """Fresh conversation seeded with the system persona + anything the user has
+        told the agent to remember (so it 'knows' those facts without calling recall)."""
+        text = self.system
+        mems = self.db.recent_memory(20)
+        if mems:
+            text += "\n\nThings the user told you to remember:\n" + "\n".join(
+                f"- {m['text']}" for m in reversed(mems))
+        return [{"role": "system", "content": text}]
 
     def is_available(self) -> bool:
         try:
@@ -145,6 +154,13 @@ class Brain:
 
     # ---- tools + permission gate -----------------------------------------
     def _execute(self, name: str, args: dict[str, Any]) -> Any:
+        if name == "remember":
+            text = str(args.get("text", "")).strip()
+            if not text:
+                return {"error": "nothing to remember"}
+            return {"status": "remembered", "id": self.db.add_memory(text)}
+        if name == "recall":
+            return {"matches": self.db.search_memory(str(args.get("query", "")))}
         if name in self.confirm_tools:
             approved = self.confirm(name, args) if self.confirm else False
             if not approved:

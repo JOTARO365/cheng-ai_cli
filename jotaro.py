@@ -54,6 +54,8 @@ HELP = f"""\
   [bold]/help[/]     show this screen
   [bold]/status[/]   system status (reads tools directly, no model)
   [bold]/model[/]    show models / switch:  /model qwen2.5:14b
+  [bold]/remember[/] save a durable fact:  /remember SRV1 is the print server
+  [bold]/memory[/]   list what's remembered
   [bold]/clear[/]    clear the conversation context
   [bold]/exit[/]     quit  (or Ctrl-D)
 
@@ -83,6 +85,10 @@ def dispatch_command(text: str) -> str:
         return "clear"
     if c == "/model" or c.startswith("/model "):
         return "model"
+    if c == "/remember" or c.startswith("/remember "):
+        return "remember"
+    if c == "/memory":
+        return "memory"
     return "ask"
 
 
@@ -308,6 +314,21 @@ def main() -> None:
                     brain.model = name
                 warn = "" if (not avail or name in avail) else "  [yellow](not pulled yet)[/]"
                 console.print(f"[{MUTED}]model →[/] [bold]{name}[/]{warn}")
+            continue
+        if action == "remember":
+            parts = text.split(maxsplit=1)
+            if len(parts) == 1:
+                console.print(f"[{MUTED}]usage: /remember <fact>[/]")
+            else:
+                mid = db.add_memory(parts[1].strip())
+                console.print(f"[{CORAL}]✓[/] remembered [dim](#{mid})[/]")
+            continue
+        if action == "memory":
+            mems = db.recent_memory(50)
+            if not mems:
+                console.print(f"[{MUTED}](nothing remembered yet — /remember <fact>)[/]")
+            for m in mems:
+                console.print(f"  [{MUTED}]#{m['id']}[/] {m['text']}")
             continue
         if action == "clear":
             history = [] if team else brain.new_history()

@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS alerts (
     sent      INTEGER NOT NULL DEFAULT 0        -- 0 = pending, 1 = delivered
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_sent ON alerts(sent);
+
+CREATE TABLE IF NOT EXISTS memory (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts    TEXT NOT NULL,
+    kind  TEXT NOT NULL DEFAULT 'fact',      -- fact | correction | preference
+    text  TEXT NOT NULL
+);
 """
 
 
@@ -193,6 +200,40 @@ class Database:
                 "UPDATE alerts SET sent = 1, channel = ? WHERE id = ?",
                 (channel, alert_id),
             )
+
+    # ---- memory (things the user told the agent to remember) -------------
+    def add_memory(self, text: str, kind: str = "fact") -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO memory (ts, kind, text) VALUES (?, ?, ?)",
+                (utcnow(), kind, text.strip()),
+            )
+            return int(cur.lastrowid)
+
+    def recent_memory(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, ts, kind, text FROM memory ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def search_memory(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Keyword-overlap search (memory is small for an SME). Returns the best
+        matches; empty list if nothing overlaps. Vector recall is a later upgrade."""
+        words = {w for w in query.lower().split() if len(w) > 1}
+        if not words:
+            return []
+        scored = []
+        for m in self.recent_memory(200):
+            hits = sum(1 for w in words if w in m["text"].lower())
+            if hits:
+                scored.append((hits, m))
+        scored.sort(key=lambda x: (-x[0], -x[1]["id"]))
+        return [m for _, m in scored[:limit]]
+
+    def forget_memory(self, mem_id: int) -> None:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM memory WHERE id = ?", (mem_id,))
 
     # ---- snapshot reads (the "tools" the chatbot answers from) ------------
     # These are READ-ONLY and return plain JSON-ready dicts so the FastAPI tool
