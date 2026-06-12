@@ -49,6 +49,20 @@ SKILL_TOOL_SPECS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_skill",
+            "description": "Search available skills by keyword (use when many skills exist and "
+                           "you need to discover which one fits). Returns matching name+description; "
+                           "then call load_skill.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "task keywords"}},
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -118,6 +132,32 @@ def catalog(skills: dict[str, Skill], limit: int = CATALOG_CAP) -> str:
     if len(items) > limit:
         lines.append(f"- (+{len(items) - limit} more skills — call load_skill by name)")
     return "\n".join(lines)
+
+
+def search_skills(skills: dict[str, Skill], query: str, limit: int = 5) -> list[dict[str, str]]:
+    """Keyword-overlap search over name+description — for find_skill when there are too
+    many skills to list."""
+    words = {w for w in query.lower().split() if len(w) > 1}
+    if not words:
+        return []
+    scored = []
+    for s in skills.values():
+        hay = (s.name + " " + s.description).lower()
+        hits = sum(1 for w in words if w in hay)
+        if hits:
+            scored.append((hits, s))
+    scored.sort(key=lambda x: (-x[0], x[1].name))
+    return [{"name": s.name, "description": s.description} for _, s in scored[:limit]]
+
+
+def skills_block(skills: dict[str, Skill]) -> str:
+    """What to inject into the system prompt: the full catalog if there are few skills,
+    otherwise a hint to discover them with find_skill (so a big dir can't bloat context)."""
+    if len(skills) <= CATALOG_CAP:
+        return ("Available skills (call load_skill(name) when one matches the task):\n"
+                + catalog(skills))
+    return (f"You have {len(skills)} skills available — too many to list. Call "
+            f"find_skill(query) to find relevant ones by keyword, then load_skill(name).")
 
 
 # --------------------------------------------------------------------------

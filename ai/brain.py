@@ -26,8 +26,8 @@ from typing import Any, Callable
 import httpx
 
 from ai.memory_tools import MEMORY_TOOL_SPECS
-from ai.skills import (DEFAULT_SKILLS_DIR, SKILL_TOOL_SPECS, catalog, discover_skills,
-                       select_skill_content)
+from ai.skills import (DEFAULT_SKILLS_DIR, SKILL_TOOL_SPECS, discover_skills,
+                       search_skills, select_skill_content, skills_block)
 from ai.prompts import SYSTEM_CHAT
 from ai.tools import TOOL_SPECS, dispatch as _db_dispatch
 from storage.db import Database
@@ -102,8 +102,7 @@ class Brain:
             text += "\n\nThings the user told you to remember:\n" + "\n".join(
                 f"- {m['text']}" for m in reversed(mems))
         if self.skills_enabled and self._skills:
-            text += ("\n\nAvailable skills (call load_skill(name) when one matches the "
-                     "task, then follow it):\n" + catalog(self._skills))
+            text += "\n\n" + skills_block(self._skills)
         return [{"role": "system", "content": text}]
 
     # ---- skills control ---------------------------------------------------
@@ -191,6 +190,10 @@ class Brain:
             return {"status": "remembered", "id": self.db.add_memory(text)}
         if name == "recall":
             return {"matches": self.db.search_memory(str(args.get("query", "")))}
+        if name == "find_skill":
+            if not self.skills_enabled:
+                return {"error": "skills are turned off"}
+            return {"matches": search_skills(self._skills, str(args.get("query", "")))}
         if name == "load_skill":
             if not self.skills_enabled:
                 return {"error": "skills are turned off"}

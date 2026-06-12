@@ -245,12 +245,15 @@ def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
     fs_d, xl_d, sh_d = (make_fs_dispatcher(base), make_excel_dispatcher(base),
                         make_shell_dispatcher(base))
     tools = FS_TOOL_SPECS + EXCEL_TOOL_SPECS + SHELL_TOOL_SPECS
+    system = SYSTEM_FS
 
     web_d = None
     if web:
         from ai.web_tools import WEB_TOOL_SPECS, make_web_dispatcher
+        from ai.prompts import WEB_NUDGE
         web_d = make_web_dispatcher()
         tools = tools + WEB_TOOL_SPECS
+        system = SYSTEM_FS + WEB_NUDGE
 
     mcp_client = None
     if mcp_config:
@@ -275,7 +278,7 @@ def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
         return fs_d(name, args)
 
     return Brain.from_config(
-        cfg, db, system=SYSTEM_FS, tools=tools, dispatcher=dispatcher,
+        cfg, db, system=system, tools=tools, dispatcher=dispatcher,
         confirm_tools=WRITE_TOOLS | EXCEL_WRITE_TOOLS | SHELL_WRITE_TOOLS,
         confirm=_confirm, **skill_kw,
     )

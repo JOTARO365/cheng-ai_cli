@@ -61,6 +61,17 @@ Reply in the SAME language as the question — Thai or English ONLY. NEVER outpu
 Chinese characters or any other language. Be concise.
 """
 
+# Appended to the workspace persona only when --web is on, to make a small model
+# actually reach for the tool instead of guessing.
+WEB_NUDGE = """
+
+WEB SEARCH: If the user asks about a fact you do not already know — a specific company, \
+person, place, date, price, or current event, or anything not in the workspace files — \
+you MUST call web_search with focused keywords FIRST. Then, if a result looks relevant, \
+call fetch_url on its URL to read the page and answer from that. Do NOT guess, and do NOT \
+say you can't help before you have searched. If the first results are irrelevant, try \
+web_search again with a better query before giving up."""
+
 # Placeholder for the (later) rule-engine escalation path — root-cause analysis on
 # an event the engine decided is interesting. Not used by the Phase-1 chatbot.
 SYSTEM_ANALYST = """\

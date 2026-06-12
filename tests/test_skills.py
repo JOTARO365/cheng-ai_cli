@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from ai.brain import Brain
-from ai.skills import (DEFAULT_SKILLS_DIR, Skill, discover_skills, select_skill_content,
-                       split_sections)
+from ai.skills import (DEFAULT_SKILLS_DIR, Skill, discover_skills, search_skills,
+                       select_skill_content, skills_block, split_sections)
 from jotaro import dispatch_command
 from storage.db import Database
 
@@ -57,6 +57,30 @@ def test_dispatch_skills_command():
     assert dispatch_command("/skills") == "skills"
     assert dispatch_command("/skills on") == "skills"
     assert dispatch_command("/skills C:/Users/x/.claude") == "skills"
+
+
+def test_search_skills():
+    skills = {f"s{i}": Skill(f"skill-{i}", f"desc topic{i}", "b", "x") for i in range(10)}
+    skills["sec"] = Skill("security-review", "review code for security issues", "b", "x")
+    res = search_skills(skills, "security review code")
+    assert res and res[0]["name"] == "security-review"
+    assert search_skills(skills, "") == []
+
+
+def test_skills_block_small_lists_large_hints():
+    small = {f"s{i}": Skill(f"a{i}", "d", "b", "x") for i in range(3)}
+    blk_small = skills_block(small)
+    assert "load_skill" in blk_small and "a0" in blk_small         # full catalog
+    large = {f"s{i}": Skill(f"a{i}", "d", "b", "x") for i in range(50)}
+    blk_large = skills_block(large)
+    assert "find_skill" in blk_large and "50 skills" in blk_large and "a0" not in blk_large
+
+
+def test_brain_find_skill(tmp_path):
+    b = Brain("http://x", "m", Database(tmp_path / "m.db"), skills_dir=DEFAULT_SKILLS_DIR)
+    out = b._execute("find_skill", {"query": "account lockout"})
+    assert any("lockout" in m["name"] for m in out["matches"])
+    assert any(t["function"]["name"] == "find_skill" for t in b.tools)
 
 
 def test_split_sections():
