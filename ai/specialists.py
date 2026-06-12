@@ -82,6 +82,15 @@ class Supervisor:
     def skill_names(self) -> list[str]:
         return self._brains["general"].skill_names()
 
+    def set_skill(self, name: str, on: bool) -> bool:
+        ok = False
+        for b in self._brains.values():
+            ok = b.set_skill(name, on)
+        return ok
+
+    def skill_status(self) -> list[tuple[str, bool]]:
+        return self._brains["general"].skill_status()
+
     @property
     def skills_enabled(self) -> bool:
         return self._brains["general"].skills_enabled

@@ -78,6 +78,7 @@ class Brain:
         self.tools = list(TOOL_SPECS if tools is None else tools) + MEMORY_TOOL_SPECS
         # progressive-loading skills (skill.md runbooks) — toggleable
         self._skills = discover_skills(skills_dir)
+        self._disabled: set[str] = set()     # individually turned-off skills
         if self._skills:
             self.tools = self.tools + SKILL_TOOL_SPECS
         self.skills_enabled = skills_enabled and bool(self._skills)
@@ -101,14 +102,28 @@ class Brain:
         if mems:
             text += "\n\nThings the user told you to remember:\n" + "\n".join(
                 f"- {m['text']}" for m in reversed(mems))
-        if self.skills_enabled and self._skills:
-            text += "\n\n" + skills_block(self._skills)
+        active = self._active()
+        if self.skills_enabled and active:
+            text += "\n\n" + skills_block(active)
         return [{"role": "system", "content": text}]
 
     # ---- skills control ---------------------------------------------------
+    def _active(self) -> dict[str, Any]:
+        return {n: s for n, s in self._skills.items() if n not in self._disabled}
+
     def set_skills_enabled(self, on: bool) -> bool:
         self.skills_enabled = bool(on) and bool(self._skills)
         return self.skills_enabled
+
+    def set_skill(self, name: str, on: bool) -> bool:
+        """Turn ONE skill on/off by name. Returns True if the skill exists."""
+        if name not in self._skills:
+            return False
+        self._disabled.discard(name) if on else self._disabled.add(name)
+        return True
+
+    def skill_status(self) -> list[tuple[str, bool]]:
+        return [(n, n not in self._disabled) for n in self._skills]
 
     def load_skills_from(self, skills_dir: Any) -> int:
         """Pull skill.md files from a local directory and enable them. Returns count."""
@@ -193,13 +208,16 @@ class Brain:
         if name == "find_skill":
             if not self.skills_enabled:
                 return {"error": "skills are turned off"}
-            return {"matches": search_skills(self._skills, str(args.get("query", "")))}
+            return {"matches": search_skills(self._active(), str(args.get("query", "")))}
         if name == "load_skill":
             if not self.skills_enabled:
                 return {"error": "skills are turned off"}
-            sk = self._skills.get(str(args.get("name", "")))
+            want = str(args.get("name", ""))
+            if want in self._disabled:
+                return {"error": "that skill is turned off"}
+            sk = self._skills.get(want)
             if not sk:
-                return {"error": f"unknown skill; available: {list(self._skills)}"}
+                return {"error": f"unknown skill; available: {list(self._active())}"}
             return select_skill_content(sk, str(args.get("query", "")))
         if name in self.confirm_tools:
             approved = self.confirm(name, args) if self.confirm else False

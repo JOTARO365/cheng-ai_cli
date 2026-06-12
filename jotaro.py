@@ -440,20 +440,26 @@ def main() -> None:
             continue
         if action == "skills":
             obj = team if team else brain
-            parts = text.split(maxsplit=1)
-            if len(parts) == 2 and parts[1].lower() in ("on", "off"):
-                obj.set_skills_enabled(parts[1].lower() == "on")
-                console.print(f"[{MUTED}]skills →[/] {'on' if obj.skills_enabled else 'off'}")
-            elif len(parts) == 2:                       # a directory → load local skills
-                n = obj.load_skills_from(parts[1].strip())
-                console.print(f"[{MUTED}]loaded[/] {n} skill(s) from {parts[1].strip()}")
-                history = [] if team else brain.new_history()   # refresh injected catalog
-            else:
-                names = obj.skill_names()
-                console.print(f"[{MUTED}]skills:[/] {'on' if obj.skills_enabled else 'off'}"
-                              f"  ({len(names)} loaded)")
-                for nm in names:
-                    console.print(f"  [{MUTED}]›[/] {nm}")
+            toks = text.split()
+            if len(toks) == 1:                                   # list + per-skill status
+                console.print(f"[{MUTED}]skills:[/] {'on' if obj.skills_enabled else 'off'} (global)")
+                for nm, en in obj.skill_status():
+                    console.print(f"  {'[green]on [/]' if en else '[red]off[/]'}  {nm}")
+            elif toks[1].lower() in ("on", "off"):
+                on = toks[1].lower() == "on"
+                if len(toks) >= 3:                               # one or more named skills
+                    for nm in toks[2:]:
+                        ok = obj.set_skill(nm, on)
+                        console.print(f"[{MUTED}]skill[/] {nm} → {'on' if on else 'off'}"
+                                      + ("" if ok else "  [yellow](not found)[/]"))
+                else:                                            # all skills
+                    obj.set_skills_enabled(on)
+                    console.print(f"[{MUTED}]skills →[/] {'on' if obj.skills_enabled else 'off'} (all)")
+                history = [] if team else brain.new_history()
+            else:                                                # a directory path → load
+                d = text.split(maxsplit=1)[1].strip()
+                console.print(f"[{MUTED}]loaded[/] {obj.load_skills_from(d)} skill(s) from {d}")
+                history = [] if team else brain.new_history()
             continue
         if action == "summarize":
             parts = text.split(maxsplit=1)

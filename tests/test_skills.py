@@ -76,6 +76,18 @@ def test_skills_block_small_lists_large_hints():
     assert "find_skill" in blk_large and "50 skills" in blk_large and "a0" not in blk_large
 
 
+def test_per_skill_toggle(tmp_path):
+    b = Brain("http://x", "m", Database(tmp_path / "m.db"), skills_dir=DEFAULT_SKILLS_DIR)
+    assert all(en for _, en in b.skill_status())             # all on by default
+    assert b.set_skill("account-lockout-response", False) is True
+    assert b.set_skill("does-not-exist", False) is False
+    assert dict(b.skill_status())["account-lockout-response"] is False
+    assert "account-lockout-response" not in b.new_history()[0]["content"]   # excluded
+    assert "turned off" in b._execute("load_skill", {"name": "account-lockout-response"})["error"]
+    b.set_skill("account-lockout-response", True)            # back on
+    assert "account-lockout-response" in b.new_history()[0]["content"]
+
+
 def test_brain_find_skill(tmp_path):
     b = Brain("http://x", "m", Database(tmp_path / "m.db"), skills_dir=DEFAULT_SKILLS_DIR)
     out = b._execute("find_skill", {"query": "account lockout"})
