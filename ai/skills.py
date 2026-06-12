@@ -106,9 +106,18 @@ def discover_skills(dirs: Any) -> dict[str, Skill]:
     return skills
 
 
-def catalog(skills: dict[str, Skill]) -> str:
-    """The name+description list injected into the system prompt (the triggers)."""
-    return "\n".join(f"- {s.name}: {s.description}" for s in skills.values())
+CATALOG_CAP = 30  # don't dump hundreds of skills into a small model's context
+
+
+def catalog(skills: dict[str, Skill], limit: int = CATALOG_CAP) -> str:
+    """The name+description list injected into the system prompt (the triggers). Capped
+    so a large skill dir (e.g. ~/.claude with 65) can't bloat/melt a small model — the
+    rest stay loadable by name via load_skill."""
+    items = list(skills.values())
+    lines = [f"- {s.name}: {s.description}" for s in items[:limit]]
+    if len(items) > limit:
+        lines.append(f"- (+{len(items) - limit} more skills — call load_skill by name)")
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------

@@ -40,6 +40,7 @@ from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, make_fs_dispatcher
 from ai.shell_tools import SHELL_TOOL_SPECS, SHELL_WRITE_TOOLS, make_shell_dispatcher
 from ai.prompts import SYSTEM_FS
 from ai.specialists import Supervisor
+from ai.verify import Verifier
 from config import load_config
 from storage.db import Database
 
@@ -240,6 +241,8 @@ def main() -> None:
     parser.add_argument("--skills", metavar="DIR",
                         help="load skill.md runbooks from DIR (e.g. a local ~/.claude). Default: ./skills")
     parser.add_argument("--no-skills", action="store_true", help="start with skills off")
+    parser.add_argument("--verify", action="store_true",
+                        help="check each answer for grounding/hallucination before showing it (slower, no streaming)")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -249,13 +252,18 @@ def main() -> None:
                 "skills_enabled": not args.no_skills}
     team = Supervisor(cfg, db, **skill_kw) if args.team else None
     brain = None if team else build_brain(cfg, db, args.workspace, **skill_kw)
+    verifier = Verifier(cfg, db) if args.verify else None
     subtitle = ("team · security / network / service" if team
                 else f"workspace · {Path(args.workspace).resolve()}" if args.workspace
                 else "read-only · offline")
 
     def answer_turn(text: str, history: list) -> None:
-        """Stream one answer (tokens) with ⏺/⎿ tool lines, a live status, + a footer."""
+        """Stream one answer (tokens) with ⏺/⎿ tool lines, a live status, + a footer.
+        With --verify, switch to a non-streaming verify-then-show pass."""
         console.print()
+        if verifier is not None:
+            _verified_turn(text, history)
+            return
         _status_show("thinking")
         try:
             if team:
@@ -273,6 +281,34 @@ def main() -> None:
         sys.stdout.write("\n")
         sys.stdout.flush()
         console.print(f"[{MUTED}]— {subtitle} · {label}[/]")
+
+    def _verified_turn(text: str, history: list) -> None:
+        _status_show("thinking")
+        try:
+            if team:
+                label, ans = team.ask(text, on_tool=_on_tool, on_result=_on_result)
+                evidence = ""
+            else:
+                ans = brain.ask(history, text, on_tool=_on_tool, on_result=_on_result)
+                label = "JOTARO"
+                evidence = "\n".join(m["content"] for m in history
+                                     if m.get("role") == "tool")[-3000:]
+            _status_show("verifying")
+            ok, issue = verifier.check(text, ans, evidence)
+            if not ok and not team:
+                _status_show("revising")
+                ans = brain.ask(history, f"(verifier) your previous answer had a problem: "
+                                f"{issue}. Answer again concisely using only the tool data, "
+                                f"no repetition.")
+        except OllamaUnavailable as exc:
+            _status_clear()
+            console.print(f"[bold red]✖ Ollama unreachable:[/bold red] {exc}")
+            return
+        _status_clear()
+        mark = "[green]✓ verified[/green]" if ok else f"[yellow]⚠ revised: {issue}[/yellow]"
+        console.print(Text.assemble(("⏺ ", CORAL), (label, MUTED)))
+        console.print(Markdown(ans or "_(no answer)_"))
+        console.print(f"[{MUTED}]— {subtitle} · {label} · [/]{mark}")
 
     if args.ask:
         answer_turn(args.ask, [])
