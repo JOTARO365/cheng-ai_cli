@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from ai.brain import Brain
-from ai.skills import DEFAULT_SKILLS_DIR, discover_skills
+from ai.skills import (DEFAULT_SKILLS_DIR, Skill, discover_skills, select_skill_content,
+                       split_sections)
 from jotaro import dispatch_command
 from storage.db import Database
 
@@ -56,3 +57,24 @@ def test_dispatch_skills_command():
     assert dispatch_command("/skills") == "skills"
     assert dispatch_command("/skills on") == "skills"
     assert dispatch_command("/skills C:/Users/x/.claude") == "skills"
+
+
+def test_split_sections():
+    heads = [h for h, _ in split_sections("intro\n\n## A\naaa\n\n## B\nbbb\n")]
+    assert "A" in heads and "B" in heads
+
+
+def test_select_returns_whole_small_skill():
+    sk = Skill("s", "d", "## A\nshort body", "x")
+    assert select_skill_content(sk, "anything")["instruction"] == sk.body
+
+
+def test_select_returns_only_relevant_section_for_large_skill():
+    big = ("# T\nintro\n\n## Security\n" + "password lockout brute force " * 40
+           + "\n\n## Network\n" + "offline switch ping outage " * 40 + "\n")
+    sk = Skill("s", "d", big, "x")
+    out = select_skill_content(sk, "password lockout")
+    assert "Security" in out["sections_returned"]
+    assert "password" in out["instruction"].lower()
+    assert "Network" in out["all_sections"]              # rest still listed (TOC)
+    assert len(out["instruction"]) < len(big)            # context saved

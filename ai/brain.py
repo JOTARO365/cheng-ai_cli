@@ -26,7 +26,8 @@ from typing import Any, Callable
 import httpx
 
 from ai.memory_tools import MEMORY_TOOL_SPECS
-from ai.skills import DEFAULT_SKILLS_DIR, SKILL_TOOL_SPECS, catalog, discover_skills
+from ai.skills import (DEFAULT_SKILLS_DIR, SKILL_TOOL_SPECS, catalog, discover_skills,
+                       select_skill_content)
 from ai.prompts import SYSTEM_CHAT
 from ai.tools import TOOL_SPECS, dispatch as _db_dispatch
 from storage.db import Database
@@ -196,7 +197,7 @@ class Brain:
             sk = self._skills.get(str(args.get("name", "")))
             if not sk:
                 return {"error": f"unknown skill; available: {list(self._skills)}"}
-            return {"name": sk.name, "instruction": sk.body}
+            return select_skill_content(sk, str(args.get("query", "")))
         if name in self.confirm_tools:
             approved = self.confirm(name, args) if self.confirm else False
             if not approved:

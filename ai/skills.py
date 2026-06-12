@@ -34,12 +34,17 @@ SKILL_TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "load_skill",
             "description": (
-                "Load the full instructions of a skill by name when its description "
-                "matches the task. Call this BEFORE doing a task a skill covers."
+                "Load a skill's instructions by name when its description matches the "
+                "task. Pass `query` (the task/keywords) so only the relevant SECTION of a "
+                "large skill is returned (saves context). Call BEFORE doing the task."
             ),
             "parameters": {
                 "type": "object",
-                "properties": {"name": {"type": "string", "description": "the skill's name"}},
+                "properties": {
+                    "name": {"type": "string", "description": "the skill's name"},
+                    "query": {"type": "string",
+                              "description": "the task/keywords — returns just the matching section of a big skill"},
+                },
                 "required": ["name"],
             },
         },
@@ -104,3 +109,48 @@ def discover_skills(dirs: Any) -> dict[str, Skill]:
 def catalog(skills: dict[str, Skill]) -> str:
     """The name+description list injected into the system prompt (the triggers)."""
     return "\n".join(f"- {s.name}: {s.description}" for s in skills.values())
+
+
+# --------------------------------------------------------------------------
+# Section-level loading — only feed the LLM the relevant part of a big skill.
+# (The "find the heading, read that part" idea, in idiomatic Python — no FFI.)
+# --------------------------------------------------------------------------
+SMALL_SKILL = 900  # chars; at or below this we just return the whole skill
+
+
+def split_sections(body: str) -> list[tuple[str, str]]:
+    """Split markdown into (heading, text) blocks by '#' headings (text keeps the
+    heading line). No headings → one block."""
+    out: list[tuple[str, str]] = []
+    head, buf = "", []
+    for line in body.splitlines():
+        if line.lstrip().startswith("#"):
+            if buf:
+                out.append((head, "\n".join(buf).strip()))
+            head, buf = line.lstrip("# ").strip(), [line]
+        else:
+            buf.append(line)
+    if buf:
+        out.append((head, "\n".join(buf).strip()))
+    return [(h, t) for h, t in out if t]
+
+
+def select_skill_content(skill: Skill, query: str = "") -> dict[str, Any]:
+    """Return the whole skill if it's small, else only the section(s) whose
+    heading/text best match `query`, plus a table of contents of the rest."""
+    sections = split_sections(skill.body)
+    if len(skill.body) <= SMALL_SKILL or len(sections) <= 1 or not query.strip():
+        return {"name": skill.name, "instruction": skill.body}
+
+    words = {w for w in query.lower().split() if len(w) > 2}
+    scored = sorted(
+        ((sum(1 for w in words if w in (h + " " + t).lower()), h, t) for h, t in sections),
+        key=lambda x: -x[0],
+    )
+    top = [s for s in scored if s[0] > 0][:2] or [scored[0]]
+    return {
+        "name": skill.name,
+        "sections_returned": [h for _, h, _ in top],
+        "instruction": "\n\n".join(t for _, _, t in top),
+        "all_sections": [h for h, _ in sections],
+    }
