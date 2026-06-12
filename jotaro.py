@@ -62,6 +62,25 @@ HELP = f"""\
 """
 
 
+EXIT_CMDS = {"/exit", "/quit", "/q"}
+HELP_CMDS = {"/help", "/h", "?"}
+
+
+def dispatch_command(text: str) -> str:
+    """Map a REPL line to an action: exit | help | status | clear | ask.
+    Pure + unit-testable (the prompt_toolkit REPL can't be driven headless on Windows)."""
+    c = text.strip().lower()
+    if c in EXIT_CMDS:
+        return "exit"
+    if c in HELP_CMDS:
+        return "help"
+    if c == "/status":
+        return "status"
+    if c == "/clear":
+        return "clear"
+    return "ask"
+
+
 def _short(v: object, n: int = 60) -> str:
     s = str(v).replace("\n", "⏎")
     return s if len(s) <= n else s[:n] + "…"
@@ -183,17 +202,18 @@ def main() -> None:
         if not text:
             continue
 
-        cmd = text.lower()
-        if cmd in ("/exit", "/quit", "/q"):
+        action = dispatch_command(text)
+        if action == "exit":
             console.print("[dim cyan]session ended.[/dim cyan]")
             break
-        if cmd in ("/help", "/h", "?"):
-            console.print(Panel(HELP, box=box.SQUARE, border_style=FRAME, expand=False))
+        if action == "help":
+            console.print(Panel(HELP, box=box.ROUNDED, border_style=CORAL,
+                                expand=False, padding=(1, 2)))
             continue
-        if cmd == "/status":
+        if action == "status":
             show_status(db)
             continue
-        if cmd == "/clear":
+        if action == "clear":
             history = [] if team else brain.new_history()
             console.print("[dim cyan]context cleared.[/dim cyan]")
             continue
