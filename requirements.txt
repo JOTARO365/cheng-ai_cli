@@ -26,3 +26,4 @@ requests>=2.31
 
 # Dev / tests
 pytest>=8.0
+textual>=0.50
