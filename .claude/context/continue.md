@@ -139,6 +139,17 @@ Updated  : 2026-06-10
   is correct (unit-tested). Prod 14b expected to reason better. Shell/excel writes are
   confirm-gated (gate unit-tested); not live-driven (would block on y/N non-interactively).
 
+---- 2026-06-12 — Eval harness + result (harness vs model size) ----
+✅ Done: eval/cases.py (seeded fixture + 8 IT Q&A + ground-truth keywords + expected tool +
+  pure scorer) + eval/run_eval.py (FACT + TOOL accuracy; --bare = no-tools comparison; --model).
+  +2 scorer tests (79 total). Pushed.
+📊 LIVE RESULT (qwen2.5:3b, 8 cases):
+  - HARNESSED: fact 8/8 (100%), tool-call 7/8 (87%)
+  - BARE (no tools): fact 0/8 (0%)  → harness lift = +100 points on fact-accuracy
+  KEY INSIGHT: on data Q&A a bare model scores 0% at ANY size (no DB access) → the HARNESS
+  (tools) is the enabler, not parameter count. Size only shows up in tool-SELECTION (the 1/8
+  miss). So "3B+harness ≈ N B" has no single answer: fact-accuracy ≈ big model; planning ≈ 3B.
+
 ## (earlier) Chatbot tool server status
 🟢 collectors + Rule Engine + sandbox + chatbot tool server
 📍 Next        : install Ollama + Open WebUI to try the chatbot live (see docs/setup.md);
