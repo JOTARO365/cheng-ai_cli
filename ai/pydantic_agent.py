@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from ai.brain import _CJK  # reuse the same CJK detector as the built-in runtime
 from ai.fs_tools import make_fs_dispatcher
 from ai.prompts import SYSTEM_FS
 
@@ -63,6 +64,15 @@ def build_agent(cfg: Any) -> Any:
         output_type=[str, DeferredToolRequests],  # lets the run pause for approval
         instructions=SYSTEM_FS,
     )
+
+    @agent.output_validator
+    def _strip_chinese(output: Any) -> Any:
+        """Same guard as the built-in runtime: qwen2.5 leaks Chinese into Thai — strip
+        any CJK from the final text so the user never sees it. (DeferredToolRequests
+        outputs pass through untouched.)"""
+        if isinstance(output, str) and _CJK.search(output):
+            return _CJK.sub("", output).strip()
+        return output
 
     @agent.tool
     def read_file(ctx: "RunContext[FsDeps]", path: str) -> Any:
