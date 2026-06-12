@@ -26,7 +26,10 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
+from ai.escalate import Analyst
+from alert.dispatch import AlertDispatcher
 from collectors.eventlog import EventLogCollector, SimulatedEventSource
+from config import load_config
 from engine.rules import Decision
 from engine.rules import RuleEngine
 from engine.thresholds import Thresholds
@@ -42,33 +45,26 @@ def banner(text: str) -> None:
     print("=" * 70)
 
 
-# ---- stubbed integrations (replace with real modules later) ----------------
-def fake_alert(decision: Decision, signal: dict) -> None:
-    """Stand-in for alert/dispatch.py — what IT would receive."""
-    host = signal.get("host", "?")
-    who = signal.get("user", "")
-    extra = f" user={who}" if who else ""
-    print(f"     📢 ALERT → Line/Teams/Email  | [{decision.severity.upper()}] "
-          f"{signal.get('kind')} on {host}{extra}")
-    print(f"        \"{decision.reason}\"")
+# ---- REAL integrations: alert dispatcher + AI analyst (offline-safe) --------
+# These are the production on_alert / on_ai. AlertDispatcher no-ops (logs) when no
+# channel is configured; Analyst skips gracefully if Ollama isn't running — so this
+# narrative still runs offline, but now exercises the real wiring.
+def make_callbacks(cfg, db):
+    dispatcher = AlertDispatcher(cfg)
+    analyst = Analyst(cfg, db)
 
+    def on_alert(decision: Decision, signal: dict) -> None:
+        chans = dispatcher.dispatch(decision, signal)
+        where = " → " + ", ".join(chans) if chans else " (no channel configured)"
+        print(f"     📢 ALERT{where}  | [{decision.severity.upper()}] "
+              f"{signal.get('kind')} on {signal.get('host', '?')}")
 
-def fake_ai(decision: Decision, signal: dict) -> None:
-    """Stand-in for ai/brain.py (Ollama). Ollama isn't installed, so this is canned."""
-    kind = signal.get("kind")
-    if kind == "login_fail":
-        verdict = (f"{signal.get('count')} fails on {signal.get('user')} from "
-                   f"{signal.get('ip') or signal.get('host')} in a short window — "
-                   "looks like a possible brute-force; recommend watching for a lockout.")
-    elif kind == "account_lockout":
-        verdict = (f"{signal.get('user')} locked out — likely the tail of the failed "
-                   "logins above; confirm with the user before unlocking.")
-    elif kind == "service_down":
-        verdict = (f"service '{signal.get('service')}' down on {signal.get('host')} — "
-                   "check dependent services; print/queue impact if it's Spooler.")
-    else:
-        verdict = "no canned analysis."
-    print(f"     🧠 AI (Ollama:SIMULATED) → {verdict}")
+    def on_ai(decision: Decision, signal: dict) -> None:
+        verdict = analyst.on_ai(decision, signal)
+        print(f"     🧠 AI → {verdict}" if verdict
+              else "     🧠 AI → (Ollama offline — skipped; rule alert still stands)")
+
+    return on_alert, on_ai
 
 
 def report(label: str, d: Decision) -> None:
@@ -88,12 +84,14 @@ def main() -> None:
         with db._conn() as c:  # noqa: SLF001  (sandbox only)
             c.execute(f"DELETE FROM {tbl}")
 
-    engine = RuleEngine(db, thresholds=Thresholds(), on_alert=fake_alert, on_ai=fake_ai)
+    on_alert, on_ai = make_callbacks(load_config(), db)
+    engine = RuleEngine(db, thresholds=Thresholds(), on_alert=on_alert, on_ai=on_ai)
     source = SimulatedEventSource()
     collector = EventLogCollector(source, engine, window_sec=Thresholds().login_fail_window_sec)
 
     print("\n🖥️  SME IT Agent — SANDBOX (simulated day)")
-    print("   AI: Ollama not installed → SIMULATED   |   Alerts: printed, not sent")
+    print("   AI: real Analyst (skips if Ollama down)  |  Alerts: real dispatcher "
+          "(no channel configured → logged only)")
 
     # ---- Scenario A: brute-force login on 'john' from PC07 ----------------
     banner("A) 09:01 — repeated login failures for 'john' (PC07 / 192.168.1.66)")
