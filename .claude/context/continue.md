@@ -106,6 +106,23 @@ Updated  : 2026-06-10
   - VERIFIED: 53 tests pass; jotaro imports clean; `jotaro-ai --ask` run from D:\sandbox\alias_try
     → list_dir → correct answer, clean Thai. No bugs found.
 
+---- 2026-06-12 — Published to GitHub + cross-terminal launchers ----
+✅ Done:
+  - bin/jotaro-ai.cmd / jotaro-mon.cmd / jotaro-team.cmd: portable launchers (use %~dp0 →
+    find jotaro.py relative to themselves). Added bin/ to USER PATH → `jotaro-ai` works in
+    ANY terminal (cmd/PowerShell/pwsh) from any folder (file assistant scoped to cwd).
+    NOTE: open a NEW terminal to pick up PATH. (Also kept $PROFILE functions for PS.)
+  - README.md written. .gitignore hardened (+.webui_secret_key, /workspace/, sandbox/ws_demo,
+    sandbox/alias_try, .claude/settings.local.json).
+  - git init + initial commit + PydanticAI-guard commit, pushed to
+    https://github.com/JOTARO365/jotaro-ai_cli (main). gh auth = JOTARO365. Verified NO
+    secrets/db/logs staged.
+  - ai/pydantic_agent.py: added @agent.output_validator that strips CJK (reuses ai.brain._CJK)
+    → PydanticAI runtime no longer leaks Chinese. All 3 runtimes now language-guarded. 53 tests.
+🔭 Remaining roadmap: LLM router (vs keyword), cross-specialist memory, and the big one —
+  wire Brain/specialists into the Rule Engine escalation (replace fake_ai) + real alert/dispatch.py
+  (Line/Teams/Email). Latter touches live-system + new deps → role.md "ask first".
+
 ## (earlier) Chatbot tool server status
 🟢 collectors + Rule Engine + sandbox + chatbot tool server
 📍 Next        : install Ollama + Open WebUI to try the chatbot live (see docs/setup.md);
