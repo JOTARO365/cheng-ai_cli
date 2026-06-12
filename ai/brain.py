@@ -91,41 +91,66 @@ class Brain:
         except httpx.HTTPError:
             return False
 
+    def list_models(self) -> list[str]:
+        """Models the local Ollama has pulled (for the /model command)."""
+        try:
+            r = httpx.get(f"{self.host}/api/tags", timeout=5.0)
+            r.raise_for_status()
+            return sorted(m["name"] for m in r.json().get("models", []))
+        except (httpx.HTTPError, KeyError, ValueError, TypeError):
+            return []
+
     def ask(
         self,
         history: list[dict[str, Any]],
         question: str,
         on_tool: Callable[[str, dict[str, Any]], None] | None = None,
+        on_result: Callable[[str, Any], None] | None = None,
+        on_token: Callable[[str], None] | None = None,
     ) -> str:
         """Run one user turn through the ReAct loop. Mutates `history`, returns the
-        model's final answer (language-guarded)."""
+        model's final answer. on_tool(name,args) fires before a tool runs;
+        on_result(name,result) after (⎿ display); on_token(delta) streams the answer
+        text token-by-token (when set, the answer is NOT language-guard-regenerated —
+        the caller is expected to strip CJK per token)."""
         history.append({"role": "user", "content": question})
         last: dict[str, Any] = {}
         for _ in range(self.max_steps):
-            last = self._chat(history)
+            last = self._chat(history, on_token=on_token)
             history.append(last)
             tool_calls = last.get("tool_calls") or []
             if not tool_calls:
-                return self._language_guard(history, (last.get("content") or "").strip())
+                final = (last.get("content") or "").strip()
+                if on_token is not None:
+                    # already streamed to the user (the caller strips CJK per-token); just
+                    # clean the copy we keep, no re-generate (can't un-stream).
+                    return _CJK.sub("", final).strip() if _has_cjk(final) else final
+                return self._language_guard(history, final)
             for tc in tool_calls:
                 fn = tc.get("function", {})
                 name = fn.get("name", "")
                 args = _as_args(fn.get("arguments"))
                 if on_tool:
                     on_tool(name, args)
-                history.append(self._run_tool(name, args))
-        return self._language_guard(history, (last.get("content") or "").strip()) or (
+                result = self._execute(name, args)
+                if on_result:
+                    on_result(name, result)
+                history.append(_tool_msg(name, result))
+        final = (last.get("content") or "").strip()
+        if on_token is not None:
+            return _CJK.sub("", final).strip()
+        return self._language_guard(history, final) or (
             "ขอข้อมูลเครื่องมือหลายรอบแล้วยังไม่ได้คำตอบ — ลองถามให้เจาะจงขึ้นนะ"
         )
 
     # ---- tools + permission gate -----------------------------------------
-    def _run_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    def _execute(self, name: str, args: dict[str, Any]) -> Any:
         if name in self.confirm_tools:
             approved = self.confirm(name, args) if self.confirm else False
             if not approved:
                 log.info("permission gate: %s DECLINED", name)
-                return _tool_msg(name, {"status": "declined by user — not executed"})
-        return _tool_msg(name, self._dispatcher(name, args))
+                return {"status": "declined by user — not executed"}
+        return self._dispatcher(name, args)
 
     # ---- language guard (kill Chinese leakage) ---------------------------
     def _language_guard(self, history: list[dict[str, Any]], answer: str,
@@ -152,23 +177,53 @@ class Brain:
         return answer
 
     # ---- Ollama call ------------------------------------------------------
-    def _chat(self, messages: list[dict[str, Any]], use_tools: bool = True) -> dict[str, Any]:
+    def _chat(self, messages: list[dict[str, Any]], use_tools: bool = True,
+              on_token: Callable[[str], None] | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
-            "stream": False,
+            "stream": on_token is not None,
             "options": {"temperature": self.temperature},
         }
         if use_tools:
             payload["tools"] = self.tools
+
+        if on_token is None:
+            try:
+                r = httpx.post(f"{self.host}/api/chat", json=payload, timeout=self.timeout)
+                r.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise OllamaUnavailable(str(exc)) from exc
+            msg = r.json().get("message")
+            if not isinstance(msg, dict):
+                raise OllamaUnavailable("unexpected response from Ollama (no message)")
+            return msg
+
+        # streaming: Ollama returns NDJSON; accumulate content + tool_calls, emit deltas
+        content: list[str] = []
+        tool_calls = None
         try:
-            r = httpx.post(f"{self.host}/api/chat", json=payload, timeout=self.timeout)
-            r.raise_for_status()
+            with httpx.stream("POST", f"{self.host}/api/chat", json=payload,
+                              timeout=self.timeout) as r:
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    obj = json.loads(line)
+                    m = obj.get("message") or {}
+                    delta = m.get("content") or ""
+                    if delta:
+                        content.append(delta)
+                        on_token(delta)
+                    if m.get("tool_calls"):
+                        tool_calls = m["tool_calls"]
+                    if obj.get("done"):
+                        break
         except httpx.HTTPError as exc:
             raise OllamaUnavailable(str(exc)) from exc
-        msg = r.json().get("message")
-        if not isinstance(msg, dict):
-            raise OllamaUnavailable("unexpected response from Ollama (no message)")
+        msg: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
         return msg
 
 

@@ -49,6 +49,17 @@ def test_edit_missing_string(ws):
     assert "not found" in d("edit_file", {"path": "notes.txt", "old_string": "ZZZ", "new_string": "q"})["error"]
 
 
+def test_find_files_and_search_text(ws):
+    d = make_fs_dispatcher(ws)
+    (ws / "a.py").write_text("import os\nprint('hi')\n", encoding="utf-8")
+    (ws / "sub").mkdir()
+    (ws / "sub" / "b.py").write_text("x = 1\n", encoding="utf-8")
+    files = d("find_files", {"pattern": "**/*.py"})["files"]
+    assert "a.py" in files and "sub/b.py".replace("/", "\\") in files or "sub/b.py" in files
+    hits = d("search_text", {"query": "hello"})  # 'hello world' is in notes.txt
+    assert any(m["file"] == "notes.txt" for m in hits["matches"])
+
+
 # ---- permission gate -------------------------------------------------------
 def _scripted_post(responses):
     state = {"i": 0}

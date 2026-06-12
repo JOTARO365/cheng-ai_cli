@@ -15,6 +15,7 @@ from jotaro import dispatch_command
     ("/help", "help"), ("/h", "help"), ("?", "help"),
     ("/status", "status"),
     ("/clear", "clear"),
+    ("/model", "model"), ("/model qwen2.5:14b", "model"), ("  /MODEL llama3.2", "model"),
     ("/exit", "exit"), ("/quit", "exit"), ("/q", "exit"),
     ("  /HELP  ", "help"),          # trimmed + case-insensitive
     ("/STATUS", "status"),

@@ -71,6 +71,17 @@ class Supervisor:
     def is_available(self) -> bool:
         return self._brains["general"].is_available()
 
+    @property
+    def model(self) -> str:
+        return self._brains["general"].model
+
+    def set_model(self, name: str) -> None:
+        for b in self._brains.values():
+            b.model = name
+
+    def list_models(self) -> list[str]:
+        return self._brains["general"].list_models()
+
     def tool_count(self) -> int:
         """Distinct tools across all specialists."""
         return len({s["function"]["name"] for sp in SPECIALISTS for s in sp.tools})
@@ -86,11 +97,12 @@ class Supervisor:
                 best, score = s.name, hits
         return best
 
-    def ask(self, question: str, on_tool=None) -> tuple[str, str]:
+    def ask(self, question: str, on_tool=None, on_result=None, on_token=None) -> tuple[str, str]:
         """Route, delegate to that specialist's Brain, return (specialist_name, answer).
         Each turn is stateless across specialists (a fresh history) — fine for routed
         Q&A; cross-specialist memory is a later concern."""
         name = self.route(question)
         brain = self._brains[name]
-        answer = brain.ask(brain.new_history(), question, on_tool=on_tool)
+        answer = brain.ask(brain.new_history(), question,
+                           on_tool=on_tool, on_result=on_result, on_token=on_token)
         return name, answer

@@ -34,7 +34,7 @@ from rich.text import Text
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
-from ai.brain import Brain, OllamaUnavailable
+from ai.brain import Brain, OllamaUnavailable, _CJK
 from ai.excel_tools import EXCEL_TOOL_SPECS, EXCEL_WRITE_TOOLS, make_excel_dispatcher
 from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, make_fs_dispatcher
 from ai.shell_tools import SHELL_TOOL_SPECS, SHELL_WRITE_TOOLS, make_shell_dispatcher
@@ -53,6 +53,7 @@ HELP = f"""\
 [{CORAL}]commands[/]
   [bold]/help[/]     show this screen
   [bold]/status[/]   system status (reads tools directly, no model)
+  [bold]/model[/]    show models / switch:  /model qwen2.5:14b
   [bold]/clear[/]    clear the conversation context
   [bold]/exit[/]     quit  (or Ctrl-D)
 
@@ -80,6 +81,8 @@ def dispatch_command(text: str) -> str:
         return "status"
     if c == "/clear":
         return "clear"
+    if c == "/model" or c.startswith("/model "):
+        return "model"
     return "ask"
 
 
@@ -126,9 +129,58 @@ def _answer_panel(answer: str, subtitle: str):
     return Group(Text(""), head, Markdown(answer or "_(no answer)_"))
 
 
+# ---- transient status line ("· thinking…" / "· running X…") ----------------
+# Plain \r + padding (no ANSI) so it clears portably on any console; any real output
+# (tool line / token) clears it first.
+_status = {"len": 0}
+
+
+def _status_show(msg: str) -> None:
+    s = f"  · {msg}…"
+    pad = max(0, _status["len"] - len(s))
+    sys.stdout.write("\r" + s + " " * pad + "\r" + s)
+    sys.stdout.flush()
+    _status["len"] = len(s)
+
+
+def _status_clear() -> None:
+    if _status["len"]:
+        sys.stdout.write("\r" + " " * _status["len"] + "\r")
+        sys.stdout.flush()
+        _status["len"] = 0
+
+
+def _summarize(result: object) -> str:
+    """One-line summary of a tool result for the ⎿ line."""
+    if isinstance(result, list):
+        return f"{len(result)} row(s)"
+    if isinstance(result, dict):
+        if "error" in result:
+            return f"error: {result['error']}"
+        parts = []
+        for k, v in result.items():
+            parts.append(f"{k}={len(v)}" if isinstance(v, list) else f"{k}={_short(v, 30)}")
+        return ", ".join(parts)[:120] or "ok"
+    return _short(result, 120)
+
+
 def _on_tool(name: str, args: dict) -> None:
+    _status_clear()
     arg_s = ", ".join(f"{k}={_short(v, 40)}" for k, v in args.items()) if args else ""
     console.print(Text.assemble(("⏺ ", CORAL), (name, "bold"), (f"({arg_s})", MUTED)))
+    _status_show(f"running {name}")
+
+
+def _on_result(name: str, result: object) -> None:
+    _status_clear()
+    console.print(Text.assemble(("  ⎿  ", MUTED), (_summarize(result), MUTED)))
+    _status_show("thinking")
+
+
+def _stream_token(delta: str) -> None:
+    _status_clear()
+    sys.stdout.write(_CJK.sub("", delta))   # strip any Chinese per-token
+    sys.stdout.flush()
 
 
 def _confirm(name: str, args: dict) -> bool:
@@ -186,23 +238,29 @@ def main() -> None:
                 else f"workspace · {Path(args.workspace).resolve()}" if args.workspace
                 else "read-only · offline")
 
-    def respond(text: str, history: list) -> tuple[str, str]:
-        """Return (label, answer) for whichever mode is active."""
-        if team:
-            with console.status("[cyan]working…[/cyan]", spinner="line"):
-                return team.ask(text, on_tool=_on_tool)
-        if brain.confirm:  # workspace mode: keep stdin clean for the y/N prompt
-            return "JOTARO", brain.ask(history, text, on_tool=_on_tool)
-        with console.status("[cyan]working…[/cyan]", spinner="line"):
-            return "JOTARO", brain.ask(history, text, on_tool=_on_tool)
-
-    if args.ask:
+    def answer_turn(text: str, history: list) -> None:
+        """Stream one answer (tokens) with ⏺/⎿ tool lines, a live status, + a footer."""
+        console.print()
+        _status_show("thinking")
         try:
-            label, answer = respond(args.ask, [])
+            if team:
+                label, _ = team.ask(text, on_tool=_on_tool, on_result=_on_result,
+                                    on_token=_stream_token)
+            else:
+                brain.ask(history, text, on_tool=_on_tool, on_result=_on_result,
+                          on_token=_stream_token)
+                label = "JOTARO"
         except OllamaUnavailable as exc:
+            _status_clear()
             console.print(f"[bold red]✖ Ollama unreachable:[/bold red] {exc}")
             return
-        console.print(_answer_panel(answer, f"{subtitle} · {label}" if team else subtitle))
+        _status_clear()
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        console.print(f"[{MUTED}]— {subtitle} · {label}[/]")
+
+    if args.ask:
+        answer_turn(args.ask, [])
         return
 
     online = team.is_available() if team else brain.is_available()
@@ -234,18 +292,29 @@ def main() -> None:
         if action == "status":
             show_status(db)
             continue
+        if action == "model":
+            parts = text.split(maxsplit=1)
+            avail = team.list_models() if team else brain.list_models()
+            if len(parts) == 1:
+                cur = team.model if team else brain.model
+                console.print(f"[{MUTED}]current:[/] [bold]{cur}[/]")
+                console.print(f"[{MUTED}]available:[/] "
+                              + (", ".join(avail) or "(none — `ollama pull <model>`)"))
+            else:
+                name = parts[1].strip()
+                if team:
+                    team.set_model(name)
+                else:
+                    brain.model = name
+                warn = "" if (not avail or name in avail) else "  [yellow](not pulled yet)[/]"
+                console.print(f"[{MUTED}]model →[/] [bold]{name}[/]{warn}")
+            continue
         if action == "clear":
             history = [] if team else brain.new_history()
             console.print("[dim cyan]context cleared.[/dim cyan]")
             continue
 
-        try:
-            label, answer = respond(text, history)
-        except OllamaUnavailable as exc:
-            console.print(f"[bold red]✖ Ollama unreachable:[/bold red] {exc}")
-            continue
-
-        console.print(_answer_panel(answer, f"{subtitle} · {label}" if team else subtitle))
+        answer_turn(text, history)
 
 
 if __name__ == "__main__":

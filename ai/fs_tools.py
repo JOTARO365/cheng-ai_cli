@@ -88,6 +88,33 @@ FS_TOOL_SPECS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_files",
+            "description": "Find files in the workspace by glob pattern (e.g. '*.py', '**/*.xlsx').",
+            "parameters": {
+                "type": "object",
+                "properties": {"pattern": {"type": "string", "description": "glob, ** allowed"}},
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_text",
+            "description": "Search file CONTENTS in the workspace for a text query (like grep). Returns file:line matches.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "glob": {"type": "string", "description": "limit to files matching this glob (default '**/*')"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -150,6 +177,41 @@ def make_fs_dispatcher(base_dir: str | Path) -> Callable[[str, dict[str, Any]], 
                 p.mkdir(parents=True, exist_ok=True)
                 log.warning("fs WRITE make_dir %s", p)
                 return {"status": "created", "path": str(p.relative_to(base))}
+
+            if name == "find_files":
+                pat = str(args.get("pattern", "*"))
+                hits = []
+                for c in base.glob(pat):
+                    rp = c.resolve()
+                    if c.is_file() and (rp == base or base in rp.parents):
+                        hits.append(str(c.relative_to(base)))
+                        if len(hits) >= 200:
+                            break
+                return {"pattern": pat, "files": sorted(hits), "count": len(hits)}
+
+            if name == "search_text":
+                query = str(args.get("query", ""))
+                if not query:
+                    return {"error": "empty query"}
+                pat = str(args.get("glob", "**/*"))
+                matches = []
+                for c in base.glob(pat):
+                    if not c.is_file():
+                        continue
+                    try:
+                        for i, line in enumerate(
+                            c.read_text(encoding="utf-8", errors="ignore").splitlines(), 1
+                        ):
+                            if query in line:
+                                matches.append({"file": str(c.relative_to(base)),
+                                                "line": i, "text": line.strip()[:200]})
+                                if len(matches) >= 100:
+                                    break
+                    except OSError:
+                        continue
+                    if len(matches) >= 100:
+                        break
+                return {"query": query, "matches": matches, "truncated": len(matches) >= 100}
 
             return {"error": f"unknown tool {name!r}"}
         except PathEscape as exc:
