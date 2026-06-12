@@ -24,6 +24,23 @@ Updated  : 2026-06-10
 💡 Standing principle reaffirmed: reuse high-level strategy (section loading, Textual, Open WebUI)
    but NOT primitives (C substr/gnl, hand-built UI) — Python/open-source libs already provide them.
 
+---- 2026-06-13 — Verifier, fan-out, UI polish, Full TUI ----
+✅ Verifier (ai/verify.py): deterministic degeneracy check (catches small-model repetition
+   meltdown w/o a model call) + critic Brain (grounding). jotaro --verify. Also capped skill
+   catalog at 30 (loading .claude's 65 into a 3B caused a hallucination loop — real finding).
+✅ Fan-out (ai/parallel.py): parallel_map (capped threads) + fan_out_summarize (chunk →
+   sub-agents summarize in isolated context → merge = context firewall). jotaro /summarize.
+   Note: one Ollama serializes inference → win is context, not wall-clock.
+✅ UI: slash-command popup menu (SlashCompleter, arrow-selectable) + ❯ prompt + bottom toolbar.
+✅ FULL TUI (jotaro_tui.py, Textual): status bar + scrollable chat (mouse) + input + worker
+   thread (UI never blocks) + ⏺/⎿ in log. monitor v1, reuses backend+memory+skills+commands.
+   bin/jotaro-tui.cmd. 121 tests.
+💡 Q: does the MODEL learn from user data? NO — memory = inject facts into context (weights
+   frozen). Correct tool for facts/RAG. Fine-tune (LoRA) = for style/skill, needs GPU (4GB
+   can't), risks staleness — wrong tool for facts. Documented, not built.
+🔭 Roadmap left: TUI v2 (workspace/team modes, sidebar, streaming-in-log), LLM router,
+   cross-specialist memory, fine-tune pipeline design (prod GPU).
+
 ## (history) CURRENT STATUS
 🟢 In progress : v0.1.0 — collectors + Rule Engine + sandbox + tool server + JOTARO CLI (34 tests)
 
