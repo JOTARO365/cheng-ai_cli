@@ -236,27 +236,49 @@ def _confirm(name: str, args: dict) -> bool:
     return ans.strip().lower() in ("y", "yes")
 
 
-def build_brain(cfg, db: Database, workspace: str | None, **skill_kw) -> Brain:
-    if workspace:
-        base = Path(workspace).resolve()
-        fs_d, xl_d, sh_d = (make_fs_dispatcher(base), make_excel_dispatcher(base),
-                            make_shell_dispatcher(base))
+def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
+                mcp_config: str | None = None, **skill_kw) -> Brain:
+    if not workspace:
+        return Brain.from_config(cfg, db, **skill_kw)
 
-        def dispatcher(name: str, args: dict):
-            if name.startswith("excel_"):
-                return xl_d(name, args)
-            if name == "run_command":
-                return sh_d(name, args)
-            return fs_d(name, args)
+    base = Path(workspace).resolve()
+    fs_d, xl_d, sh_d = (make_fs_dispatcher(base), make_excel_dispatcher(base),
+                        make_shell_dispatcher(base))
+    tools = FS_TOOL_SPECS + EXCEL_TOOL_SPECS + SHELL_TOOL_SPECS
 
-        return Brain.from_config(
-            cfg, db, system=SYSTEM_FS,
-            tools=FS_TOOL_SPECS + EXCEL_TOOL_SPECS + SHELL_TOOL_SPECS,
-            dispatcher=dispatcher,
-            confirm_tools=WRITE_TOOLS | EXCEL_WRITE_TOOLS | SHELL_WRITE_TOOLS,
-            confirm=_confirm, **skill_kw,
-        )
-    return Brain.from_config(cfg, db, **skill_kw)
+    web_d = None
+    if web:
+        from ai.web_tools import WEB_TOOL_SPECS, make_web_dispatcher
+        web_d = make_web_dispatcher()
+        tools = tools + WEB_TOOL_SPECS
+
+    mcp_client = None
+    if mcp_config:
+        from ai.mcp_client import MCPClient, load_mcp_config
+        try:
+            mcp_client = MCPClient(load_mcp_config(mcp_config))
+            tools = tools + mcp_client.tool_specs()
+            console.print(f"[{MUTED}]mcp:[/] connected {len(mcp_client.names())} tool(s) "
+                          f"({', '.join(mcp_client.names()) or 'none'})")
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[yellow]MCP load failed:[/yellow] {exc}")
+
+    def dispatcher(name: str, args: dict):
+        if web_d and name == "web_search":
+            return web_d(name, args)
+        if mcp_client and name in mcp_client.names():
+            return mcp_client.dispatch(name, args)
+        if name.startswith("excel_"):
+            return xl_d(name, args)
+        if name == "run_command":
+            return sh_d(name, args)
+        return fs_d(name, args)
+
+    return Brain.from_config(
+        cfg, db, system=SYSTEM_FS, tools=tools, dispatcher=dispatcher,
+        confirm_tools=WRITE_TOOLS | EXCEL_WRITE_TOOLS | SHELL_WRITE_TOOLS,
+        confirm=_confirm, **skill_kw,
+    )
 
 
 def main() -> None:
@@ -273,6 +295,10 @@ def main() -> None:
     parser.add_argument("--no-skills", action="store_true", help="start with skills off")
     parser.add_argument("--verify", action="store_true",
                         help="check each answer for grounding/hallucination before showing it (slower, no streaming)")
+    parser.add_argument("--web", action="store_true",
+                        help="enable web_search (DuckDuckGo) in workspace mode — opt-in internet")
+    parser.add_argument("--mcp", metavar="CONFIG",
+                        help="connect to MCP servers from a JSON config (their tools become callable)")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -281,7 +307,8 @@ def main() -> None:
     skill_kw = {"skills_dir": args.skills or DEFAULT_SKILLS_DIR,
                 "skills_enabled": not args.no_skills}
     team = Supervisor(cfg, db, **skill_kw) if args.team else None
-    brain = None if team else build_brain(cfg, db, args.workspace, **skill_kw)
+    brain = None if team else build_brain(cfg, db, args.workspace, web=args.web,
+                                          mcp_config=args.mcp, **skill_kw)
     verifier = Verifier(cfg, db) if args.verify else None
     subtitle = ("team · security / network / service" if team
                 else f"workspace · {Path(args.workspace).resolve()}" if args.workspace

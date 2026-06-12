@@ -21,6 +21,10 @@ ldap3>=2.9
 # Excel file tools (--workspace mode)
 openpyxl>=3.1
 
+# Optional general tools: web search (--web) and MCP client (--mcp)
+ddgs>=6.0
+mcp>=1.0
+
 # Alerts
 requests>=2.31
 
