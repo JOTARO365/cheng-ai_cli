@@ -123,6 +123,22 @@ Updated  : 2026-06-10
   wire Brain/specialists into the Rule Engine escalation (replace fake_ai) + real alert/dispatch.py
   (Line/Teams/Email). Latter touches live-system + new deps → role.md "ask first".
 
+---- 2026-06-12 — Excel + shell tools + /command fix ----
+✅ Done:
+  - Verified all CLI slash commands; FOUND+FIXED bug: /help crashed (stale FRAME const from
+    the restyle) → routed via pure dispatch_command() (+13 headless tests, prompt_toolkit
+    can't run piped on Windows).
+  - ai/excel_tools.py (openpyxl): excel_list_sheets/excel_read free; excel_write_cell/
+    excel_append_row/excel_create confirmed. Shares fs path-jail. EXCEL_WRITE_TOOLS.
+  - ai/shell_tools.py: run_command runs in workspace (bash if present, else OS shell),
+    ALWAYS confirmed, timeout + output capture/truncate. _confirm shows FULL command.
+  - jotaro --workspace now COMBINES fs + excel + shell (route excel_*→excel, run_command→shell,
+    else fs) behind one path-jail + permission gate. SYSTEM_FS updated. 77 tests pass. Pushed.
+🐞 Live finding (3B reasoning, not a tool bug): asked "who's in HR", model passed sheet="HR"
+  (a dept value) instead of reading rows of the only sheet → wrong answer. excel_read itself
+  is correct (unit-tested). Prod 14b expected to reason better. Shell/excel writes are
+  confirm-gated (gate unit-tested); not live-driven (would block on y/N non-interactively).
+
 ## (earlier) Chatbot tool server status
 🟢 collectors + Rule Engine + sandbox + chatbot tool server
 📍 Next        : install Ollama + Open WebUI to try the chatbot live (see docs/setup.md);
