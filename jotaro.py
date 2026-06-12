@@ -13,6 +13,8 @@ Commands:  /help   /status   /clear   /exit
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
 
 # Force UTF-8 first — this entrypoint prints box-drawing + Thai. (cp874 console would
@@ -124,6 +126,17 @@ class SlashCompleter(Completer):
         for cmd, desc in SLASH_CMDS:
             if cmd.startswith(token):
                 yield Completion(cmd, start_position=-len(token), display=cmd, display_meta=desc)
+
+
+_NOINFO = re.compile(
+    r"ไม่ทราบ|ไม่มีข้อมูล|ไม่แน่ใจ|ไม่สามารถ(ตอบ|หา|ให้)|ไม่พบ(ข้อมูล)?|ขอโทษ.*ไม่|"
+    r"don'?t (know|have)|not sure|no (information|data|record)|can'?t (find|answer|help)|"
+    r"unable to", re.IGNORECASE)
+
+
+def _no_knowledge(text: str) -> bool:
+    """True if the answer signals the model doesn't know — used to trigger an auto web search."""
+    return bool(text) and bool(_NOINFO.search(text))
 
 
 def _short(v: object, n: int = 60) -> str:
@@ -313,6 +326,7 @@ def main() -> None:
     brain = None if team else build_brain(cfg, db, args.workspace, web=args.web,
                                           mcp_config=args.mcp, **skill_kw)
     verifier = Verifier(cfg, db) if args.verify else None
+    web_enabled = bool(args.web) and brain is not None      # auto web-search fallback on
     subtitle = ("team · security / network / service" if team
                 else f"workspace · {Path(args.workspace).resolve()}" if args.workspace
                 else "read-only · offline")
@@ -323,6 +337,9 @@ def main() -> None:
         console.print()
         if verifier is not None:
             _verified_turn(text, history)
+            return
+        if web_enabled:
+            _web_turn(text, history)
             return
         _status_show("thinking")
         try:
@@ -369,6 +386,30 @@ def main() -> None:
         console.print(Text.assemble(("⏺ ", CORAL), (label, MUTED)))
         console.print(Markdown(ans or "_(no answer)_"))
         console.print(f"[{MUTED}]— {subtitle} · {label} · [/]{mark}")
+
+    def _web_turn(text: str, history: list) -> None:
+        _status_show("thinking")
+        searched = False
+        try:
+            ans = brain.ask(history, text, on_tool=_on_tool, on_result=_on_result)
+            if _no_knowledge(ans):                       # model doesn't know → search ourselves
+                _status_show("searching the web")
+                sr = brain._execute("web_search", {"query": text})  # noqa: SLF001 — deterministic
+                _on_tool("web_search", {"query": text})
+                _on_result("web_search", sr)
+                searched = True
+                ans = brain.ask(history, "Web search results: "
+                                + json.dumps(sr, ensure_ascii=False)[:2500]
+                                + f"\n\nNow answer the question from these results: {text}")
+        except OllamaUnavailable as exc:
+            _status_clear()
+            console.print(f"[bold red]✖ Ollama unreachable:[/bold red] {exc}")
+            return
+        _status_clear()
+        console.print(Text.assemble(("⏺ ", CORAL), ("JOTARO", MUTED)))
+        console.print(Markdown(ans or "_(no answer)_"))
+        tail = " · [green]web ↗[/green]" if searched else ""
+        console.print(f"[{MUTED}]— {subtitle} · JOTARO[/]{tail}")
 
     if args.ask:
         answer_turn(args.ask, [])

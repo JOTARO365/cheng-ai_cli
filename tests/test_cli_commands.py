@@ -10,7 +10,7 @@ import pytest
 
 from prompt_toolkit.document import Document
 
-from jotaro import SlashCompleter, dispatch_command
+from jotaro import SlashCompleter, _no_knowledge, dispatch_command
 
 
 @pytest.mark.parametrize("text, action", [
@@ -28,6 +28,14 @@ from jotaro import SlashCompleter, dispatch_command
 ])
 def test_dispatch_command(text: str, action: str) -> None:
     assert dispatch_command(text) == action
+
+
+def test_no_knowledge_detector():
+    assert _no_knowledge("ขอโทษครับ ผมไม่มีข้อมูลเรื่องนี้")
+    assert _no_knowledge("I don't know the founding date")
+    assert _no_knowledge("ไม่ทราบวันก่อตั้ง")
+    assert not _no_knowledge("PC20 และ PC12 ปิดอยู่ตอนนี้")
+    assert not _no_knowledge("")
 
 
 def test_slash_completer():
