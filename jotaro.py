@@ -17,6 +17,7 @@ import getpass
 import json
 import re
 import sys
+from datetime import datetime
 
 # Force UTF-8 first — this entrypoint prints box-drawing + Thai. (cp874 console would
 # mojibake it.) See the powershell-windows-encoding skill.
@@ -66,6 +67,7 @@ HELP = f"""\
   [bold]/memory[/]   list what's remembered
   [bold]/skills[/]   list skills · /skills on|off · /skills <dir> (load local, e.g. ~/.claude)
   [bold]/summarize[/] fan-out summarize a big file (chunk → sub-agents → merge)
+  [bold]/sessions[/] list saved sessions  [{MUTED}](resume with --resume <id> / --continue)[/]
   [bold]/whoami[/]   show the signed-in user        [{MUTED}](--login)[/]
   [bold]/passwd[/]   change your password           [{MUTED}](--login)[/]
   [bold]/users[/]    manage users (admin): /users · add · passwd · del
@@ -112,6 +114,8 @@ def dispatch_command(text: str) -> str:
         return "passwd"
     if c == "/users" or c.startswith("/users "):
         return "users"
+    if c == "/sessions" or c.startswith("/sessions "):
+        return "sessions"
     return "ask"
 
 
@@ -123,6 +127,7 @@ SLASH_CMDS = [
     ("/memory", "list what's remembered"),
     ("/skills", "list · on|off · load a dir"),
     ("/summarize", "fan-out summarize a file"),
+    ("/sessions", "list saved sessions"),
     ("/whoami", "show the signed-in user"),
     ("/passwd", "change your password"),
     ("/users", "manage users (admin)"),
@@ -187,6 +192,33 @@ def show_status(db: Database) -> None:
     )
     console.print(Panel(body, title=f"[{CORAL}]status[/]", title_align="left",
                         box=box.ROUNDED, border_style=MUTED, expand=False, padding=(0, 1)))
+
+
+def _new_session_id() -> str:
+    """A readable, sortable per-session id (local time). Collisions need two launches
+    in the same second; the DB upsert would just merge them harmlessly anyway."""
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def print_sessions(db: Database) -> None:
+    rows = db.list_sessions(30)
+    if not rows:
+        console.print(f"  [{MUTED}](no saved sessions yet)[/]")
+        return
+    console.print(f"[{CORAL}]saved sessions[/] [{MUTED}](newest first — `--resume <id>`)[/]")
+    for s in rows:
+        when = (s["updated_at"] or "")[:16].replace("T", " ")
+        label = (s["label"] or "—").replace("\n", " ")[:50]
+        console.print(f"  [bold]{s['id']}[/]  [{MUTED}]{when}[/]  {label}")
+
+
+def _autosave(db: Database, sess_id: str, history: list) -> None:
+    """Persist the conversation after a turn. Skips trivial (system-only) history so an
+    empty launch doesn't create a blank session."""
+    if len(history) <= 1:
+        return
+    label = next((m.get("content") for m in history if m.get("role") == "user"), None)
+    db.save_session(sess_id, history, label=(label or "").strip()[:80] or None)
 
 
 def _answer_panel(answer: str, subtitle: str):
@@ -446,10 +478,20 @@ def main() -> None:
     parser.add_argument("--login", action="store_true",
                         help="require username/password sign-in before the session "
                              "(first run creates an admin account)")
+    parser.add_argument("--continue", dest="cont", action="store_true",
+                        help="resume the most recent chat session")
+    parser.add_argument("--resume", metavar="ID",
+                        help="resume a specific chat session by id (see --sessions)")
+    parser.add_argument("--sessions", action="store_true",
+                        help="list saved chat sessions and exit")
     args = parser.parse_args()
 
     cfg = load_config()
     db = Database(cfg.db_path)
+
+    if args.sessions:
+        print_sessions(db)
+        return
 
     auth = Auth(db)
     current_user: User | None = None
@@ -564,7 +606,24 @@ def main() -> None:
     if team:
         console.print(Align.center(Text("TEAM ROUTING: security · network · service",
                                         style="bold cyan")))
+    # ---- session persistence (--continue / --resume) ----------------------
+    # Team mode keeps no single history (each specialist has its own) → not resumable.
+    sess_id = _new_session_id()
     history: list = [] if team else brain.new_history()
+    if not team and (args.resume or args.cont):
+        target = args.resume or db.latest_session_id()
+        loaded = db.load_session(target) if target else None
+        if loaded:
+            sess_id, history = target, loaded
+            turns = sum(1 for m in history if m.get("role") == "user")
+            console.print(f"[{MUTED}]↻ resumed session [bold]{sess_id}[/] "
+                          f"({turns} turn{'s' if turns != 1 else ''})[/]")
+        else:
+            console.print(f"[yellow]no session to resume"
+                          f"{f' ({args.resume})' if args.resume else ''} — starting fresh[/]")
+    elif team and (args.resume or args.cont):
+        console.print(f"[{MUTED}]↻ --team sessions aren't resumable (per-specialist history)[/]")
+
     session: PromptSession = PromptSession(
         history=InMemoryHistory(), completer=SlashCompleter(), complete_while_typing=True,
         bottom_toolbar=lambda: HTML("  <b>/</b> commands   <b>↑↓</b> history   <b>Ctrl-D</b> quit  "),
@@ -682,12 +741,18 @@ def main() -> None:
             else:
                 _cmd_users(auth, current_user, text)
             continue
+        if action == "sessions":
+            print_sessions(db)
+            continue
         if action == "clear":
             history = [] if team else brain.new_history()
+            sess_id = _new_session_id()                  # a clear starts a new session
             console.print("[dim cyan]context cleared.[/dim cyan]")
             continue
 
         answer_turn(text, history)
+        if not team:
+            _autosave(db, sess_id, history)              # persist after each turn
 
 
 if __name__ == "__main__":

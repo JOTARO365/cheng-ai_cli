@@ -61,6 +61,15 @@ CREATE TABLE IF NOT EXISTS memory (
     text  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+    id          TEXT PRIMARY KEY,          -- e.g. 20260613-143002 (one chat session)
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    label       TEXT,                       -- first user message (shown when listing)
+    history     TEXT NOT NULL               -- JSON array of chat messages
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at);
+
 CREATE TABLE IF NOT EXISTS users (
     username      TEXT PRIMARY KEY,
     pw_hash       TEXT NOT NULL,             -- PBKDF2-HMAC-SHA256 hex (never plaintext)
@@ -245,6 +254,56 @@ class Database:
     def forget_memory(self, mem_id: int) -> None:
         with self._conn() as conn:
             conn.execute("DELETE FROM memory WHERE id = ?", (mem_id,))
+
+    # ---- chat sessions (persistence / --continue / --resume) --------------
+    # The whole conversation history is stored as one JSON blob keyed by session id.
+    # Single-user CLI, sessions are small → blob-per-session beats a per-message table.
+    def save_session(self, session_id: str, history: list[dict[str, Any]],
+                     label: str | None = None) -> None:
+        """Upsert a session's full history. `label` (set once, on first save) is the
+        first user message, shown when listing. Re-saves only bump updated_at + history."""
+        blob = json.dumps(history, ensure_ascii=False, default=str)
+        # microsecond precision so re-saving a session within the same wall-clock
+        # second still makes it the latest (what --continue resumes).
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO sessions (id, created_at, updated_at, label, history)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       updated_at = excluded.updated_at,
+                       label      = COALESCE(sessions.label, excluded.label),
+                       history    = excluded.history""",
+                (session_id, now, now, label, blob),
+            )
+
+    def load_session(self, session_id: str) -> list[dict[str, Any]] | None:
+        """Return the stored history list, or None if no such session."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT history FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        return json.loads(row["history"]) if row else None
+
+    def latest_session_id(self) -> str | None:
+        """Most recently updated session id (what `--continue` resumes), or None."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM sessions ORDER BY updated_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+        return row["id"] if row else None
+
+    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, created_at, updated_at, label FROM sessions "
+                "ORDER BY updated_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_session(self, session_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 
     # ---- users (username/password login) ---------------------------------
     # Storage only — hashing / lockout policy lives in ai/auth.py. We keep the

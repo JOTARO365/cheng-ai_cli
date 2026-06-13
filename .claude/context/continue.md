@@ -41,6 +41,21 @@ Updated  : 2026-06-10
 🔭 Roadmap left: TUI v2 (workspace/team modes, sidebar, streaming-in-log), LLM router,
    cross-specialist memory, fine-tune pipeline design (prod GPU).
 
+---- 2026-06-13 — Session persistence / resume (Claude-Code gap #6) ----
+✅ storage/db.py: sessions table (id, created/updated_at, label, history JSON) +
+   save_session (upsert, label sticky, microsecond updated_at so re-save = latest),
+   load_session, latest_session_id, list_sessions, delete_session.
+✅ jotaro.py: --continue (resume latest), --resume <id>, --sessions (list & exit),
+   /sessions in REPL, autosave after every non-team turn, /clear starts a NEW session.
+   Team mode excluded (per-specialist history, no single thread to resume).
+✅ tests/test_sessions.py (7): roundtrip+Thai, missing→None, sticky label, latest tracks
+   re-save, list order/limit, delete. 193 tests pass.
+✅ LIVE VERIFIED (qwen2.5:3b): launch1 learned "file server=SRV07, Chiang Mai" + autosaved;
+   a FRESH Brain loaded the session from SQLite and answered the follow-up correctly
+   ("SRV07 อยู่ในสำนักงานเชียงใหม่"). Also `jotaro.py --sessions` lists with Thai labels intact.
+📌 GAP doc updated: #2 compaction, #1b tool-error, #6 resume all DONE. Next ranked: #8
+   configurable hooks, then #5 edit diff-preview, #1c Ollama retry/backoff.
+
 ---- 2026-06-13 — Context compaction (Claude-Code gap) ----
 ✅ ai/brain.py: Brain now self-compacts history. When _history_chars(history) exceeds
    context_budget (default 16k chars ≈ 4k tok), _compact folds the OLDEST turns into one
