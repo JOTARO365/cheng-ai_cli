@@ -61,6 +61,7 @@ class Config:
     # AI brain (local Ollama only)
     ollama_host: str
     ollama_model: str
+    ollama_model_hard: str          # bigger/code model for hard turns (--auto-model)
     # Active Directory (read-only)
     ad_domain: str | None
     ldap_server: str | None
@@ -95,6 +96,8 @@ def load_config(base_dir: Path | None = None) -> Config:
     return Config(
         ollama_host=_get("OLLAMA_HOST", "http://127.0.0.1:11434"),  # type: ignore[arg-type]
         ollama_model=_get("OLLAMA_MODEL", "qwen2.5:3b"),  # type: ignore[arg-type]
+        # default = same as the easy model → no routing until you set a bigger one
+        ollama_model_hard=_get("OLLAMA_MODEL_HARD", _get("OLLAMA_MODEL", "qwen2.5:3b")),  # type: ignore[arg-type]
         ad_domain=_get("AD_DOMAIN"),
         ldap_server=_get("LDAP_SERVER"),
         ldap_bind_user=_get("LDAP_BIND_USER"),

@@ -5,6 +5,23 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — #3 Model router by difficulty (easy→3b, hard→coder/14b) ----
+✅ ai/router.py ModelRouter(classifier, easy_model, hard_model, use_llm=False): pick(q) →
+   (model, difficulty). Routes UP only when the hard model is actually pulled (_hard_ok
+   cached); fails safe to easy. config OLLAMA_MODEL_HARD (default = OLLAMA_MODEL → no-op).
+   cheng --auto-model (non-team): per-turn brain.model swap + "↗ hard turn → <model>" note.
+✅ tests/test_router.py (8) + config field. 279 tests pass.
+🐞 HONEST FINDING (live): the 3b is UNRELIABLE at self-classifying difficulty — it labelled
+   even "PC ไหนปิดอยู่บ้าง" as hard (same meta-task weakness as the specialist-router/excel
+   findings). FIX: made a DETERMINISTIC heuristic the DEFAULT (coding/planning/explain-step
+   keywords EN+TH = hard, else easy); the structured LLM classifier is opt-in (use_llm,
+   only worthwhile with a capable classifier model). Heuristic live = 4 IT lookups→easy,
+   3 coding/design→hard. Reliable + zero-cost — mirrors the keyword specialist router.
+💡 Pattern reaffirmed: on a 3B, prefer deterministic logic for meta-decisions (routing,
+   difficulty); reserve the model for the actual answer. Anthropic routing = classifier OR rules.
+🧱 coder:7b still downloading (flaky net, blob restarts) — when it lands, hard turns
+   auto-route to it (no code change) + run python -m eval.compare_models for the A/B.
+
 ---- 2026-06-13 — #2 Structured output (Ollama format=schema → reliable on 3b) ----
 ✅ Brain.structured(prompt, schema, system=) → constrained JSON via Ollama `format` (no
    tools/stream); _parse_json strips fences/extracts {..}; retries then StructuredError.

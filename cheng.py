@@ -622,6 +622,9 @@ def main() -> None:
     parser.add_argument("--llm-route", action="store_true",
                         help="with --team: route via a structured-output classifier "
                              "(falls back to keyword) instead of pure keyword matching")
+    parser.add_argument("--auto-model", action="store_true",
+                        help="route hard turns to OLLAMA_MODEL_HARD (a bigger/code model) "
+                             "and easy turns to the fast model; needs the hard model pulled")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -646,6 +649,13 @@ def main() -> None:
                                           mcp_config=args.mcp, **skill_kw)
     if brain is not None and not args.no_hooks:
         brain.hooks = default_safe_hooks()              # gap #8: block rm -rf etc. by default
+    router = None
+    if brain is not None and args.auto_model:
+        from ai.router import ModelRouter
+        router = ModelRouter(brain, cfg.ollama_model, cfg.ollama_model_hard)
+        if not router.enabled:
+            console.print(f"[{MUTED}]--auto-model: set OLLAMA_MODEL_HARD to a bigger model "
+                          f"(now both = {cfg.ollama_model})[/]")
     verifier = Verifier(cfg, db) if args.verify else None
     web_enabled = web and brain is not None                 # auto web-search fallback on
     subtitle = ("team · security / network / service" if team
@@ -662,6 +672,12 @@ def main() -> None:
         for rel in mentions:
             console.print(Text.assemble(("⏺ ", CORAL), ("@" + rel, "bold"),
                                         (" loaded into context", MUTED)))
+        if router is not None and not team:
+            chosen, diff = router.pick(text)
+            brain.model = chosen
+            if diff == "hard":
+                tag = chosen if chosen != cfg.ollama_model else f"{chosen} (hard model not pulled)"
+                console.print(f"  [{MUTED}]↗ hard turn → {tag}[/]")
         if verifier is not None:
             _verified_turn(text, history)
             return
