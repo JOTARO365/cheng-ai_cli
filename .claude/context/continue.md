@@ -5,6 +5,24 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — Beyond-the-9: @file mentions + token/usage readout ----
+✅ cheng.py: expand_mentions(text, base) inlines a user-typed @path's content into the
+   prompt (workspace-relative, capped MENTION_MAX=20k, unknown @tokens left alone). Wired
+   into answer_turn; shows "⏺ @path loaded into context". tests/test_mentions.py (6).
+✅ ai/brain.py: _record_usage captures Ollama prompt_eval_count/eval_count/eval_duration;
+   usage_total (calls/prompt/output tokens/eval_ms) + usage_summary (tok/s). /usage panel
+   in cheng.py (aggregates team brains via Supervisor.brains()). tests/test_usage.py (5).
+   241 tests pass.
+🔬 TESTING-RIGOR FINDING (important): my FIRST two live @file tests used a hand-built Brain
+   with the WRONG persona (SYSTEM_CHAT monitor + DB tools, or a generic system) → 3B gave
+   false-negative "DB_PORT not found" even though the file content was delivered verbatim.
+   Testing the REAL integrated path `cheng.py --workspace --no-web --ask "@config.py ..."`
+   (SYSTEM_FS persona) → answered "5432" CORRECTLY. LESSON: live-test through the actual
+   CLI entrypoint, not hand-assembled components — wrong persona ≠ broken feature. Validates
+   the harness thesis: same 3B, wrong persona = garbage, product persona = correct.
+📌 Beyond-9 status: @file ✅, token/usage ✅. Remaining (lower value): custom slash cmds,
+   plan mode, TodoWrite; multimodal = BLOCKED (qwen2.5 is text-only).
+
 ---- 2026-06-13 — Ollama retry/backoff (gap #1c) — ALL ranked gaps now closed ----
 ✅ ai/brain.py: Brain(retries=2, backoff=0.5). _chat retries TRANSIENT failures
    (httpx.TransportError = connect/read/timeout/protocol, or 5xx = model still loading)

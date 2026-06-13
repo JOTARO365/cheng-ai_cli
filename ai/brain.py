@@ -107,6 +107,11 @@ class Brain:
         # backoff. Permanent errors (4xx) and a non-empty partial stream are NOT retried.
         self.retries = retries
         self.backoff = backoff
+        # token/usage accounting (Ollama returns eval counts per call). last = most recent
+        # call; total = cumulative for the session. Surfaced by jotaro's /usage.
+        self.last_usage: dict[str, float] = {}
+        self.usage_total = {"calls": 0, "prompt_tokens": 0,
+                            "completion_tokens": 0, "eval_ms": 0.0}
 
     @classmethod
     def from_config(cls, cfg: Any, db: Database, **kw: Any) -> "Brain":
@@ -375,9 +380,11 @@ class Brain:
                 try:
                     r = httpx.post(f"{self.host}/api/chat", json=payload, timeout=self.timeout)
                     r.raise_for_status()
-                    msg = r.json().get("message")
+                    data = r.json()
+                    msg = data.get("message")
                     if not isinstance(msg, dict):
                         raise OllamaUnavailable("unexpected response from Ollama (no message)")
+                    self._record_usage(data)
                     return msg
                 except httpx.HTTPError as exc:
                     if self._retry_wait(exc, attempt):
@@ -407,6 +414,7 @@ class Brain:
                         if m.get("tool_calls"):
                             tool_calls = m["tool_calls"]
                         if obj.get("done"):
+                            self._record_usage(obj)     # counts arrive in the final chunk
                             break
                 break
             except httpx.HTTPError as exc:
@@ -418,6 +426,25 @@ class Brain:
         if tool_calls:
             msg["tool_calls"] = tool_calls
         return msg
+
+    def _record_usage(self, data: dict[str, Any]) -> None:
+        """Capture Ollama's per-call token counts (prompt_eval_count / eval_count) and
+        generation time. Cheap and best-effort — missing fields just count as 0."""
+        pt = int(data.get("prompt_eval_count") or 0)
+        ct = int(data.get("eval_count") or 0)
+        ms = float(data.get("eval_duration") or 0) / 1e6      # ns → ms (generation only)
+        self.last_usage = {"prompt_tokens": pt, "completion_tokens": ct, "eval_ms": ms}
+        self.usage_total["calls"] += 1
+        self.usage_total["prompt_tokens"] += pt
+        self.usage_total["completion_tokens"] += ct
+        self.usage_total["eval_ms"] += ms
+
+    def usage_summary(self) -> dict[str, float]:
+        """Session totals + derived generation speed (tokens/sec) for /usage."""
+        u = dict(self.usage_total)
+        secs = u["eval_ms"] / 1000.0
+        u["tokens_per_sec"] = round(u["completion_tokens"] / secs, 1) if secs else 0.0
+        return u
 
     @staticmethod
     def _is_transient(exc: httpx.HTTPError) -> bool:

@@ -70,6 +70,7 @@ HELP = f"""\
   [bold]/summarize[/] fan-out summarize a big file (chunk → sub-agents → merge)
   [bold]/sessions[/] list saved sessions  [{MUTED}](resume with --resume <id> / --continue)[/]
   [bold]/hooks[/]    list active safety hooks       [{MUTED}](--no-hooks to disable)[/]
+  [bold]/usage[/]    token usage + speed this session
   [bold]/whoami[/]   show the signed-in user        [{MUTED}](--login)[/]
   [bold]/passwd[/]   change your password           [{MUTED}](--login)[/]
   [bold]/users[/]    manage users (admin): /users · add · passwd · del
@@ -120,6 +121,8 @@ def dispatch_command(text: str) -> str:
         return "sessions"
     if c == "/hooks":
         return "hooks"
+    if c == "/usage":
+        return "usage"
     return "ask"
 
 
@@ -133,6 +136,7 @@ SLASH_CMDS = [
     ("/summarize", "fan-out summarize a file"),
     ("/sessions", "list saved sessions"),
     ("/hooks", "list active safety hooks"),
+    ("/usage", "token usage this session"),
     ("/whoami", "show the signed-in user"),
     ("/passwd", "change your password"),
     ("/users", "manage users (admin)"),
@@ -311,6 +315,35 @@ def _render_diff(diff_text: str, max_lines: int = 80) -> None:
     if len(lines) > max_lines:
         out.append(f"    … {len(lines) - max_lines} more line(s)\n", style=MUTED)
     console.print(out, end="")
+
+
+_MENTION = re.compile(r"@([^\s@]+)")
+MENTION_MAX = 20_000  # chars per referenced file injected into the prompt
+
+
+def expand_mentions(text: str, base) -> tuple[str, list[str]]:
+    """Expand `@path` tokens the USER typed into inlined file context (Claude-Code-style
+    @file mentions). Reads files relative to `base`; unknown @tokens are left untouched
+    (could be an email or a literal @). Returns (possibly-rewritten text, loaded paths)."""
+    base = Path(base)
+    loaded: list[tuple[str, str]] = []
+
+    def _sub(m: "re.Match[str]") -> str:
+        rel = m.group(1).rstrip(".,;:)]}'\"")          # trailing punctuation isn't part of the path
+        p = base / rel
+        try:
+            if p.is_file():
+                loaded.append((rel, p.read_text(encoding="utf-8", errors="replace")[:MENTION_MAX]))
+                return rel                              # keep the path word in the question
+        except OSError:
+            pass
+        return m.group(0)                               # leave an unknown @token as-is
+
+    new = _MENTION.sub(_sub, text)
+    if not loaded:
+        return text, []
+    blocks = "\n\n".join(f"--- {rel} ---\n{content}" for rel, content in loaded)
+    return f"Referenced files:\n{blocks}\n\nQuestion: {new}", [r for r, _ in loaded]
 
 
 def make_confirm(base) -> "Callable[[str, dict], bool]":
@@ -558,6 +591,10 @@ def main() -> None:
         """Stream one answer (tokens) with ⏺/⎿ tool lines, a live status, + a footer.
         With --verify, switch to a non-streaming verify-then-show pass."""
         console.print()
+        text, mentions = expand_mentions(text, args.workspace or ".")
+        for rel in mentions:
+            console.print(Text.assemble(("⏺ ", CORAL), ("@" + rel, "bold"),
+                                        (" loaded into context", MUTED)))
         if verifier is not None:
             _verified_turn(text, history)
             return
@@ -794,6 +831,24 @@ def main() -> None:
                 console.print(f"[{CORAL}]active hooks[/] [{MUTED}](guard points around tool calls)[/]")
                 for r in rows:
                     console.print(f"  [{MUTED}]{r}[/]")
+            continue
+        if action == "usage":
+            brains = team.brains() if team and hasattr(team, "brains") else \
+                ([brain] if brain else [])
+            tot = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "eval_ms": 0.0}
+            for b in brains:
+                for k in tot:
+                    tot[k] += b.usage_total.get(k, 0)
+            secs = tot["eval_ms"] / 1000.0
+            tps = round(tot["completion_tokens"] / secs, 1) if secs else 0.0
+            console.print(Panel(Text.from_markup(
+                f"  [{MUTED}]model[/]   {cfg.ollama_model}\n"
+                f"  [{MUTED}]calls[/]   {tot['calls']}\n"
+                f"  [{MUTED}]prompt[/]  {tot['prompt_tokens']:,} tokens\n"
+                f"  [{MUTED}]output[/]  {tot['completion_tokens']:,} tokens\n"
+                f"  [{MUTED}]speed[/]   {tps} tok/s [{MUTED}](generation)[/]"),
+                title=f"[{CORAL}]usage · this session[/]", title_align="left",
+                box=box.ROUNDED, border_style=MUTED, expand=False, padding=(0, 1)))
             continue
         if action == "clear":
             history = [] if team else brain.new_history()

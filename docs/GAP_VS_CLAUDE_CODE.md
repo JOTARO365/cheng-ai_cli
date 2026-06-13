@@ -25,11 +25,11 @@ Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ par
 | Configurable hooks | ✅ | see #8 — pre/post-tool guard registry + built-in shell guard |
 | TodoWrite / task tracking | ✗ | no in-agent task list |
 | Diff preview before edit | ✅ | **Fixed** (2026-06-13). The confirm prompt for `edit_file`/`write_file` shows a colored unified diff (`ai/fs_tools.diff_for` + `_render_diff`); warns when `old_string` won't match. `tests/test_diff_preview.py` |
-| `@file` mentions | ✗ | model reads files via `read_file` tool instead |
+| `@file` mentions | ✅ | **Added** (2026-06-13). `cheng.expand_mentions` inlines a user-typed `@path`'s content into the prompt (workspace-relative, capped, unknown @tokens left alone). `tests/test_mentions.py` |
 | Custom slash commands | ✗ | slash set is fixed in code |
 | Plan mode | ✗ | — |
 | Image / multimodal input | ✗ | text model (qwen2.5) |
-| Token / cost readout | ✗ | no usage accounting |
+| Token / cost readout | ✅ | **Added** (2026-06-13). Brain accumulates Ollama's prompt/eval token counts + gen speed; `/usage` shows the session total. `tests/test_usage.py` |
 | MCP servers | ✅ | sync bridge over the MCP SDK |
 | Streaming output | ✅ | NDJSON token streaming |
 | Memory across sessions | ✅ | SQLite `remember`/`recall` (Claude Code uses CLAUDE.md/memory files) |

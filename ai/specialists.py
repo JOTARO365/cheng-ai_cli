@@ -113,6 +113,10 @@ class Supervisor:
         """Distinct tools across all specialists."""
         return len({s["function"]["name"] for sp in SPECIALISTS for s in sp.tools})
 
+    def brains(self) -> list[Brain]:
+        """Every specialist brain (so the CLI can aggregate token usage across them)."""
+        return list(self._brains.values())
+
     def route(self, question: str) -> str:
         """Pick a specialist by keyword; 'general' if nothing matches. Deterministic,
         no LLM call. (Swap this body for an LLM router if you ever need fuzzier intent.)"""
