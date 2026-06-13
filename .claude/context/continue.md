@@ -5,6 +5,23 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — Shared sessions (user+cwd) + TUI streaming/spinner/layout ----
+✅ Session now bound to (user, cwd) — cheng.session_key(user, folder) + session_user(None|User).
+   DEFAULT (no flag) auto-binds CLI to its folder+user session; TUI does the SAME →
+   CLI & TUI launched from the same folder SHARE one conversation (live-verified: TUI
+   loaded a fact the CLI saved). --resume <id> = specific; --continue = latest anywhere;
+   /clear = delete THIS folder's session. cwd is used ALWAYS (even in --workspace mode,
+   per user). tests/test_session_key.py (6). 249 tests pass.
+✅ TUI (cheng_tui.py): now streams tokens (on_token) like the CLI + animated spinner
+   (set_interval 0.09s) showing live phase (thinking→running <tool>→writing) + transient
+   #live preview that settles into the log; input box layout fixed (margin/breathing room,
+   border title "ask", brighter focus). Shares the CLI's session store.
+✅ CLI spinner now ANIMATES: cheng._Spinner = bg thread rotating ⠋⠙⠹⠸ on the status line
+   (was a static "· thinking…"), lock-guarded so it never writes between clear+output.
+💡 Why TUI vs CLI answers differed: (a) temperature 0.2 = non-deterministic wording per
+   call (dominant), (b) TUI was non-streaming → went through _language_guard regenerate
+   while CLI streamed → now both stream (aligned). Facts identical (same DB/tools).
+
 ---- 2026-06-13 — BUG FOUND BY REAL-USAGE TESTING: blank-answer fix ----
 🐞 FIXED (real harness bug, mocks didn't catch it): when the model returned EMPTY content
    + no tool call (weak 3B's failure mode when irrelevant tools — memory/skill specs are

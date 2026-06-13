@@ -14,9 +14,12 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import hashlib
 import json
+import os
 import re
 import sys
+import threading
 from datetime import datetime
 
 # Force UTF-8 first — this entrypoint prints box-drawing + Thai. (cp874 console would
@@ -209,6 +212,28 @@ def _new_session_id() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+def session_user(current_user: "User | None") -> str:
+    """Whose session this is: the signed-in user (--login) or the OS user."""
+    if current_user is not None:
+        return current_user.username
+    try:
+        return getpass.getuser() or "local"
+    except Exception:  # noqa: BLE001 — getuser can raise if no login info
+        return "local"
+
+
+def session_key(user: str, folder: str) -> str:
+    """Deterministic session id bound to (user, folder) so the CLI and TUI launched
+    from the SAME folder by the SAME user share one conversation context. The abspath
+    hash keeps it unique; the basename slug keeps it readable in /sessions."""
+    folder = os.path.abspath(folder)
+    h = hashlib.sha1(folder.encode("utf-8", "replace")).hexdigest()[:8]
+    base = os.path.basename(folder.rstrip("\\/")) or "root"
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", base).strip("-").lower() or "dir"
+    user_slug = re.sub(r"[^A-Za-z0-9]+", "-", user).strip("-").lower() or "user"
+    return f"{slug}-{h}-{user_slug}"
+
+
 def print_sessions(db: Database) -> None:
     rows = db.list_sessions(30)
     if not rows:
@@ -237,25 +262,64 @@ def _answer_panel(answer: str, subtitle: str):
     return Group(Text(""), head, Markdown(answer or "_(no answer)_"))
 
 
-# ---- transient status line ("· thinking…" / "· running X…") ----------------
-# Plain \r + padding (no ANSI) so it clears portably on any console; any real output
-# (tool line / token) clears it first.
-_status = {"len": 0}
+# ---- transient ANIMATED status line ("⠹ thinking…" / "⠼ running X…") ---------
+# brain.ask() blocks while the model runs, so a background thread spins the frame on
+# the same line (plain \r, no ANSI cursor codes → portable). Any real output clears it
+# first; a lock makes sure the spinner never writes between a clear and that output.
+class _Spinner:
+    FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._stop: "threading.Event | None" = None
+        self._thread: "threading.Thread | None" = None
+        self._len = 0
+        self._msg = ""
+
+    def show(self, msg: str) -> None:
+        self.clear()
+        self._msg = msg
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        i = 0
+        assert self._stop is not None
+        while not self._stop.is_set():
+            with self._lock:
+                if self._stop.is_set():
+                    break
+                s = f"  {self.FRAMES[i % len(self.FRAMES)]} {self._msg}…"
+                pad = max(0, self._len - len(s))
+                sys.stdout.write("\r" + s + " " * pad + "\r" + s)
+                sys.stdout.flush()
+                self._len = len(s)
+            i += 1
+            self._stop.wait(0.1)
+
+    def clear(self) -> None:
+        if self._thread is not None:
+            assert self._stop is not None
+            self._stop.set()
+            self._thread.join(timeout=0.3)
+            self._thread = None
+        with self._lock:
+            if self._len:
+                sys.stdout.write("\r" + " " * self._len + "\r")
+                sys.stdout.flush()
+                self._len = 0
+
+
+_spinner = _Spinner()
 
 
 def _status_show(msg: str) -> None:
-    s = f"  · {msg}…"
-    pad = max(0, _status["len"] - len(s))
-    sys.stdout.write("\r" + s + " " * pad + "\r" + s)
-    sys.stdout.flush()
-    _status["len"] = len(s)
+    _spinner.show(msg)
 
 
 def _status_clear() -> None:
-    if _status["len"]:
-        sys.stdout.write("\r" + " " * _status["len"] + "\r")
-        sys.stdout.flush()
-        _status["len"] = 0
+    _spinner.clear()
 
 
 def _summarize(result: object) -> str:
@@ -683,23 +747,31 @@ def main() -> None:
     if team:
         console.print(Align.center(Text("TEAM ROUTING: security · network · service",
                                         style="bold cyan")))
-    # ---- session persistence (--continue / --resume) ----------------------
-    # Team mode keeps no single history (each specialist has its own) → not resumable.
-    sess_id = _new_session_id()
-    history: list = [] if team else brain.new_history()
-    if not team and (args.resume or args.cont):
-        target = args.resume or db.latest_session_id()
-        loaded = db.load_session(target) if target else None
+    # ---- session persistence (auto-bound to user + cwd) -------------------
+    # By DEFAULT the session id is derived from (user, current folder) so the CLI and
+    # TUI launched from the same folder share one conversation. --resume <id> jumps to a
+    # specific past session; --continue resumes the most-recent one anywhere. Team mode
+    # keeps no single history (each specialist has its own) → not resumable.
+    if team:
+        sess_id = _new_session_id()
+        history: list = []
+        if args.resume or args.cont:
+            console.print(f"[{MUTED}]↻ --team sessions aren't resumable (per-specialist history)[/]")
+    else:
+        if args.resume:
+            sess_id = args.resume
+        elif args.cont:
+            sess_id = db.latest_session_id() or session_key(session_user(current_user), os.getcwd())
+        else:                                   # default: bind to this user + this folder
+            sess_id = session_key(session_user(current_user), os.getcwd())
+        loaded = db.load_session(sess_id)
+        history = loaded if loaded else brain.new_history()
         if loaded:
-            sess_id, history = target, loaded
             turns = sum(1 for m in history if m.get("role") == "user")
-            console.print(f"[{MUTED}]↻ resumed session [bold]{sess_id}[/] "
-                          f"({turns} turn{'s' if turns != 1 else ''})[/]")
-        else:
-            console.print(f"[yellow]no session to resume"
-                          f"{f' ({args.resume})' if args.resume else ''} — starting fresh[/]")
-    elif team and (args.resume or args.cont):
-        console.print(f"[{MUTED}]↻ --team sessions aren't resumable (per-specialist history)[/]")
+            console.print(f"[{MUTED}]↻ resumed [bold]{sess_id}[/] "
+                          f"({turns} turn{'s' if turns != 1 else ''} in this folder)[/]")
+        elif args.resume:
+            console.print(f"[yellow]no session {args.resume} — starting fresh[/]")
 
     session: PromptSession = PromptSession(
         history=InMemoryHistory(), completer=SlashCompleter(), complete_while_typing=True,
@@ -852,7 +924,8 @@ def main() -> None:
             continue
         if action == "clear":
             history = [] if team else brain.new_history()
-            sess_id = _new_session_id()                  # a clear starts a new session
+            if not team:
+                db.delete_session(sess_id)               # wipe THIS folder's saved context
             console.print("[dim cyan]context cleared.[/dim cyan]")
             continue
 

@@ -10,6 +10,7 @@ This v1 is monitor mode (read-only IT tools) + memory + skills. Reuses the same 
 """
 from __future__ import annotations
 
+import os
 import sys
 
 from rich.markdown import Markdown
@@ -18,9 +19,10 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Input, RichLog, Static
 
-from ai.brain import OllamaUnavailable
+from ai.brain import OllamaUnavailable, _CJK
 from config import load_config
-from cheng import HELP, SLASH_CMDS, _summarize, build_brain, dispatch_command
+from cheng import (HELP, SLASH_CMDS, _autosave, _summarize, build_brain,
+                   dispatch_command, session_key, session_user)
 from storage.db import Database
 
 CORAL = "#d97757"
@@ -29,22 +31,40 @@ CORAL = "#d97757"
 class JotaroTUI(App):
     CSS = """
     Screen { layout: vertical; }
-    #status { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
-    #chat { height: 1fr; padding: 0 1; background: $surface; }
-    #prompt { dock: bottom; border: round #d97757; }
+    #status { height: 1; padding: 0 2; background: $panel; color: $text-muted; }
+    #chat { height: 1fr; padding: 1 2; background: $surface; }
+    #prompt {
+        height: 3;                 /* 1 line of text + the rounded border */
+        margin: 1 2 1 2;           /* breathing room: above, sides, and off the footer */
+        border: round #d97757;
+        background: $surface;
+    }
+    #prompt:focus { border: round #ffb59d; }   /* brighter coral when active */
+    #live { height: auto; max-height: 8; padding: 0 2; color: $text-muted; }
+    Footer { background: $panel; }
     """
     BINDINGS = [("ctrl+c", "quit", "quit"), ("ctrl+l", "clear", "clear")]
+    SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
     def __init__(self) -> None:
         super().__init__()
         self.cfg = load_config()
         self.db = Database(self.cfg.db_path)
         self.brain = build_brain(self.cfg, self.db, None)
-        self.history = self.brain.new_history()
+        # bind to the same (user, cwd) session as the CLI → shared context across both
+        self.sess_id = session_key(session_user(None), os.getcwd())
+        loaded = self.db.load_session(self.sess_id)
+        self.history = loaded if loaded else self.brain.new_history()
+        self._resumed_turns = sum(1 for m in (loaded or []) if m.get("role") == "user")
+        self._busy = False          # a request is in flight (drives the spinner)
+        self._phase = ""            # what we're doing now: thinking / running <tool>
+        self._spin = 0
+        self._stream: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Static(self._status_text(), id="status")
         yield RichLog(id="chat", wrap=True, markup=True, highlight=False)
+        yield Static("", id="live")          # transient: spinner-streamed answer preview
         yield Input(placeholder="ask in Thai or English · / for commands", id="prompt")
         yield Footer()
 
@@ -53,9 +73,23 @@ class JotaroTUI(App):
         self.sub_title = "SME IT Agent · local · offline"
         log = self.query_one("#chat", RichLog)
         log.write(Text("✻ CHENG AI", style=f"bold {CORAL}"))
-        log.write(Text("ask about offline PCs, login fails, lockouts, alerts — or /help",
-                       style="grey58"))
-        self.query_one("#prompt", Input).focus()
+        if self._resumed_turns:
+            log.write(Text(f"↻ resumed {self._resumed_turns} turn(s) from this folder "
+                           f"(shared with the CLI) — context is loaded", style="grey58"))
+        else:
+            log.write(Text("ask about offline PCs, login fails, lockouts, alerts — or /help",
+                           style="grey58"))
+        prompt = self.query_one("#prompt", Input)
+        prompt.border_title = "ask"                 # label on the rounded box
+        prompt.border_subtitle = "Enter ⏎ · / cmds"
+        prompt.focus()
+        self.set_interval(0.09, self._tick)          # animate the working spinner
+
+    def _tick(self) -> None:
+        if not self._busy:
+            return
+        self._spin = (self._spin + 1) % len(self.SPIN)
+        self._set_status(f" [b]{self.SPIN[self._spin]}[/] {self._phase}")
 
     def _status_text(self) -> str:
         online = "[green]●[/] online" if self.brain.is_available() else "[red]●[/] offline"
@@ -67,6 +101,7 @@ class JotaroTUI(App):
 
     def action_clear(self) -> None:
         self.history = self.brain.new_history()
+        self.db.delete_session(self.sess_id)        # wipe this folder's shared context
         self.query_one("#chat", RichLog).clear()
 
     @on(Input.Submitted, "#prompt")
@@ -106,24 +141,44 @@ class JotaroTUI(App):
     @work(thread=True)
     def _ask(self, text: str) -> None:
         log = self.query_one("#chat", RichLog)
-        self.call_from_thread(self._set_status, " ⠋ thinking…")
+        live = self.query_one("#live", Static)
+        self._stream = []
+        self._busy = True
+        self._phase = "thinking…"
 
         def on_tool(name: str, args: dict) -> None:
+            self._phase = f"running {name}…"          # spinner reflects the live step
             arg_s = ", ".join(f"{k}={_summarize(v) if not isinstance(v, (str, int, float)) else v}"
                               for k, v in args.items())
             self.call_from_thread(log.write, Text.assemble(("⏺ ", CORAL), (name, "bold"),
                                                            (f"({arg_s})", "grey58")))
 
         def on_result(name: str, result: object) -> None:
+            self._phase = "thinking…"
             self.call_from_thread(log.write, Text.assemble(("  ⎿ ", "grey58"),
                                                            (_summarize(result), "grey58")))
 
+        def on_token(delta: str) -> None:
+            d = _CJK.sub("", delta)                   # strip Chinese leakage per token
+            if not d:
+                return
+            self._phase = "writing…"
+            self._stream.append(d)
+            tail = "".join(self._stream)[-700:]       # show the growing answer (tail)
+            self.call_from_thread(live.update, Text("▌ " + tail, style="grey70"))
+
+        ans = None
         try:
-            ans = self.brain.ask(self.history, text, on_tool=on_tool, on_result=on_result)
+            ans = self.brain.ask(self.history, text, on_tool=on_tool,
+                                 on_result=on_result, on_token=on_token)
         except OllamaUnavailable as exc:
             self.call_from_thread(log.write, f"[red]✖ Ollama unreachable:[/] {exc}")
-        else:
+        finally:
+            self._busy = False
+        self.call_from_thread(live.update, "")         # clear the transient preview
+        if ans is not None:
             self.call_from_thread(log.write, Markdown(ans or "_(no answer)_"))
+        _autosave(self.db, self.sess_id, self.history)  # persist → shared with the CLI
         self.call_from_thread(self._set_status, self._status_text())
 
 
