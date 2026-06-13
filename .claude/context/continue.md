@@ -5,6 +5,25 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — BUG FOUND BY REAL-USAGE TESTING: blank-answer fix ----
+🐞 FIXED (real harness bug, mocks didn't catch it): when the model returned EMPTY content
+   + no tool call (weak 3B's failure mode when irrelevant tools — memory/skill specs are
+   always injected — are in scope), ask() returned '' (the fallback only existed on the
+   max-steps path). User saw a BLANK reply. Live repro: a "fix this code" prompt → 0/5
+   non-blank via ask(), yet raw _chat(use_tools=False) gave perfect code.
+✅ Fix (ai/brain.py): on empty no-tool reply, pop the empty turn + retry once WITHOUT tools
+   (clean context) → then _EMPTY_FALLBACK constant (TH+EN) instead of ''. Both the empty
+   branch and the max-steps branch now share the fallback → ask() NEVER returns ''.
+   tests/test_brain.py +2 (retry-without-tools, persistent-empty→fallback). 243 tests.
+✅ AFTER: same prompt 5/5 non-blank, 5/5 contain the correct fix. (3B still adds a verbose
+   preamble — model quality, not a harness bug; coder:7b A/B pending slow download.)
+💡 PROCESS LESSON (user was right to push): unit tests mock Ollama so they pass while the
+   live model returns blanks. Must live-test through the REAL CLI entrypoint. This bug was
+   found ONLY by driving real prompts through the real path. eval/compare_models.py added
+   (fair A/B: same prompts, same tools-free coding persona, 3b vs coder:7b).
+🧱 coder:7b downloading to D: (slow ~360KB/s link, DNS flaky — 1st pull died at 3% w/ DNS
+   'no such host', resumed). Run `python -m eval.compare_models` once it lands.
+
 ---- 2026-06-13 — Beyond-the-9: @file mentions + token/usage readout ----
 ✅ cheng.py: expand_mentions(text, base) inlines a user-typed @path's content into the
    prompt (workspace-relative, capped MENTION_MAX=20k, unknown @tokens left alone). Wired

@@ -43,6 +43,12 @@ def _has_cjk(text: str) -> bool:
     return bool(_CJK.search(text))
 
 
+# Shown when the model produces no usable answer (degenerate empty / tools-exhausted) so
+# the user never sees a blank reply.
+_EMPTY_FALLBACK = ("ยังไม่ได้คำตอบที่ชัดเจน — ลองถามใหม่ หรือถามให้เจาะจงขึ้นอีกนิดนะ "
+                   "(I couldn't produce a clear answer — please rephrase or be more specific.)")
+
+
 class OllamaUnavailable(RuntimeError):
     """Raised when the local Ollama server can't be reached — the caller should fall
     back (e.g. tell IT the AI is offline) rather than crash."""
@@ -200,11 +206,20 @@ class Brain:
             tool_calls = last.get("tool_calls") or []
             if not tool_calls:
                 final = (last.get("content") or "").strip()
+                if not final:
+                    # degenerate empty reply — a weak model sometimes returns nothing when
+                    # irrelevant tools are in scope. Drop the empty turn, retry once WITHOUT
+                    # tools (clean context) so it answers in text, then fall back to a clear
+                    # message rather than a blank reply.
+                    history.pop()                     # remove the empty assistant message
+                    retry = self._chat(history, use_tools=False, on_token=on_token)
+                    history.append(retry)
+                    final = (retry.get("content") or "").strip()
                 if on_token is not None:
                     # already streamed to the user (the caller strips CJK per-token); just
                     # clean the copy we keep, no re-generate (can't un-stream).
-                    return _CJK.sub("", final).strip() if _has_cjk(final) else final
-                return self._language_guard(history, final)
+                    return (_CJK.sub("", final).strip() if _has_cjk(final) else final) or _EMPTY_FALLBACK
+                return self._language_guard(history, final) or _EMPTY_FALLBACK
             for tc in tool_calls:
                 fn = tc.get("function", {})
                 name = fn.get("name", "")
@@ -225,10 +240,8 @@ class Brain:
                 history.append(_tool_msg(name, result))
         final = (last.get("content") or "").strip()
         if on_token is not None:
-            return _CJK.sub("", final).strip()
-        return self._language_guard(history, final) or (
-            "ขอข้อมูลเครื่องมือหลายรอบแล้วยังไม่ได้คำตอบ — ลองถามให้เจาะจงขึ้นนะ"
-        )
+            return _CJK.sub("", final).strip() or _EMPTY_FALLBACK
+        return self._language_guard(history, final) or _EMPTY_FALLBACK
 
     # ---- tools + permission gate -----------------------------------------
     def _execute(self, name: str, args: dict[str, Any]) -> Any:

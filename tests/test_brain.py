@@ -126,3 +126,36 @@ def test_is_available(db: Database, monkeypatch) -> None:
 
     monkeypatch.setattr(brain_mod.httpx, "get", boom)
     assert Brain("http://x", "m", db).is_available() is False
+
+
+# --- regression: degenerate empty reply must not surface as a blank answer ---
+def test_empty_reply_retries_without_tools(db, monkeypatch):
+    """Model returns empty content + no tool call (weak-model failure mode) → ask()
+    retries once without tools and uses that answer instead of returning ''."""
+    import ai.brain as brain_mod
+    calls = {"n": 0}
+
+    def fake_chat(self, messages, use_tools=True, on_token=None):
+        calls["n"] += 1
+        if calls["n"] == 1:                       # first call: empty, tools were in scope
+            assert use_tools is True
+            return {"role": "assistant", "content": ""}
+        assert use_tools is False                 # retry must drop tools
+        return {"role": "assistant", "content": "def first(x): return x[0] if x else None"}
+
+    monkeypatch.setattr(brain_mod.Brain, "_chat", fake_chat)
+    b = brain_mod.Brain("http://x", "m", db)
+    ans = b.ask(b.new_history(), "fix it")
+    assert "return x[0] if x else None" in ans
+    assert calls["n"] == 2
+
+
+def test_persistent_empty_falls_back_to_message(db, monkeypatch):
+    """If even the no-tools retry is empty, return the fallback, never a blank string."""
+    import ai.brain as brain_mod
+    monkeypatch.setattr(brain_mod.Brain, "_chat",
+                        lambda self, m, use_tools=True, on_token=None:
+                        {"role": "assistant", "content": ""})
+    b = brain_mod.Brain("http://x", "m", db)
+    ans = b.ask(b.new_history(), "hi")
+    assert ans == brain_mod._EMPTY_FALLBACK and ans.strip()
