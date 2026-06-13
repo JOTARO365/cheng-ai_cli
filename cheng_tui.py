@@ -133,10 +133,29 @@ class JotaroTUI(App):
         elif action == "skills":
             log.write(f"skills: {'on' if self.brain.skills_enabled else 'off'} "
                       f"({len(self.brain.skill_names())})  " + ", ".join(self.brain.skill_names()))
+        elif action == "usage":
+            u = self.brain.usage_total
+            secs = u["eval_ms"] / 1000
+            tps = round(u["completion_tokens"] / secs, 1) if secs else 0
+            log.write(f"usage: {u['calls']} calls · {u['prompt_tokens']:,} prompt + "
+                      f"{u['completion_tokens']:,} output tokens · {tps} tok/s")
+        elif action == "sessions":
+            rows = self.db.list_sessions(20)
+            log.write("\n".join(f"  {s['id']}  {(s['label'] or '')[:40]}" for s in rows)
+                      or "(no saved sessions)")
+        elif action == "whoami":
+            log.write(f"  {session_user(None)}  [grey58]· OS user (TUI = monitor, no accounts)[/]")
+        elif action == "model":
+            log.write(f"  model: [b]{self.brain.model}[/]  ·  available: "
+                      + (", ".join(self.brain.list_models()) or "(none)"))
+        elif action == "hooks":
+            log.write("  [grey58](no safety hooks in monitor mode)[/]")
         elif action == "clear":
             self.action_clear()
-        else:
+        elif action == "ask":
             self._ask(text)
+        else:   # login / passwd / users / summarize — CLI-only here
+            log.write(f"[grey58]/{action} isn't available in the TUI — use the CLI for that[/]")
 
     @work(thread=True)
     def _ask(self, text: str) -> None:

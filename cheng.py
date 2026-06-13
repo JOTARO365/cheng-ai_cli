@@ -42,6 +42,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.shortcuts import CompleteStyle
 
 from ai.auth import Auth, AuthError, User
 from ai.brain import Brain, OllamaUnavailable, _CJK
@@ -74,8 +75,9 @@ HELP = f"""\
   [bold]/sessions[/] list saved sessions  [{MUTED}](resume with --resume <id> / --continue)[/]
   [bold]/hooks[/]    list active safety hooks       [{MUTED}](--no-hooks to disable)[/]
   [bold]/usage[/]    token usage + speed this session
-  [bold]/whoami[/]   show the signed-in user        [{MUTED}](--login)[/]
-  [bold]/passwd[/]   change your password           [{MUTED}](--login)[/]
+  [bold]/whoami[/]   show who you are (OS user, or signed-in account)
+  [bold]/login[/]    sign in to an account          [{MUTED}](enables /users · /passwd)[/]
+  [bold]/passwd[/]   change your password           [{MUTED}](needs /login)[/]
   [bold]/users[/]    manage users (admin): /users · add · passwd · del
   [bold]/clear[/]    clear the conversation context
   [bold]/exit[/]     quit  (or Ctrl-D)
@@ -116,9 +118,11 @@ def dispatch_command(text: str) -> str:
         return "summarize"
     if c == "/whoami":
         return "whoami"
+    if c == "/login":
+        return "login"
     if c == "/passwd":
         return "passwd"
-    if c == "/users" or c.startswith("/users "):
+    if c == "/users" or c.startswith("/users ") or c == "/user":
         return "users"
     if c == "/sessions" or c.startswith("/sessions "):
         return "sessions"
@@ -140,7 +144,8 @@ SLASH_CMDS = [
     ("/sessions", "list saved sessions"),
     ("/hooks", "list active safety hooks"),
     ("/usage", "token usage this session"),
-    ("/whoami", "show the signed-in user"),
+    ("/whoami", "show who you are (OS user, or signed-in account)"),
+    ("/login", "sign in to an account (enables /users · /passwd)"),
     ("/passwd", "change your password"),
     ("/users", "manage users (admin)"),
     ("/clear", "reset the conversation"),
@@ -175,9 +180,8 @@ def _short(v: object, n: int = 60) -> str:
     return s if len(s) <= n else s[:n] + "…"
 
 
-def title_screen(model: str, online: bool, n_tools: int, workspace: str | None) -> None:
+def title_screen(model: str, online: bool, n_tools: int, mode: str) -> None:
     status = "[green]● online[/]" if online else "[red]● offline[/]"
-    mode = f"workspace · {workspace}" if workspace else "monitor · read-only"
     body = Text.from_markup(
         f"[{CORAL}]✻[/] [bold]CHENG AI[/]  [{MUTED}]· SME IT Agent · local · offline[/]\n\n"
         f"  [{MUTED}]model[/]   {model}   {status}\n"
@@ -762,7 +766,12 @@ def main() -> None:
 
     online = team.is_available() if team else brain.is_available()
     n_tools = team.tool_count() if team else len(brain.tools)
-    title_screen(cfg.ollama_model, online, n_tools, args.workspace)
+    extras = []
+    if args.verify: extras.append("verify")
+    if router is not None and router.enabled: extras.append("auto-model")
+    if web_enabled: extras.append("web")
+    mode = subtitle + (f"  [+{', '.join(extras)}]" if extras else "")
+    title_screen(cfg.ollama_model, online, n_tools, mode)
     if team:
         console.print(Align.center(Text("TEAM ROUTING: security · network · service",
                                         style="bold cyan")))
@@ -794,6 +803,7 @@ def main() -> None:
 
     session: PromptSession = PromptSession(
         history=InMemoryHistory(), completer=SlashCompleter(), complete_while_typing=True,
+        complete_style=CompleteStyle.MULTI_COLUMN,   # pop the /command grid as you type '/'
         bottom_toolbar=lambda: HTML("  <b>/</b> commands   <b>↑↓</b> history   <b>Ctrl-D</b> quit  "),
     )
 
@@ -896,14 +906,24 @@ def main() -> None:
                           (f"{p.name} — {n} chunk(s) across sub-agents", MUTED)))
             console.print(Markdown(summary or "_(empty)_"))
             continue
-        if action in ("whoami", "passwd", "users"):
-            if current_user is None:
-                console.print(f"  [{MUTED}]not signed in — start with [bold]--login[/] "
-                              f"to use accounts[/]")
-                continue
-            if action == "whoami":
+        if action == "whoami":                       # always works, even without accounts
+            if current_user is not None:
                 console.print(f"  [bold]{current_user.username}[/] [{MUTED}]· "
                               f"{current_user.role}[/]")
+            else:
+                console.print(f"  [bold]{session_user(None)}[/] [{MUTED}]· OS user, not signed "
+                              f"in (use [bold]/login[/] or start with --login for accounts)[/]")
+            continue
+        if action == "login":
+            if current_user is not None:
+                console.print(f"  [{MUTED}]already signed in as [bold]{current_user.username}[/][/]")
+            else:
+                current_user = login_gate(db)         # sign in mid-session; enables /users, /passwd
+            continue
+        if action in ("passwd", "users"):
+            if current_user is None:
+                console.print(f"  [{MUTED}]not signed in — use [bold]/login[/] "
+                              f"(or start with --login)[/]")
             elif action == "passwd":
                 _cmd_passwd(auth, current_user)
             else:

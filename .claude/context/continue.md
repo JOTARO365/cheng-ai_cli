@@ -5,6 +5,23 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-14 — UX fixes: slash commands (CLI+TUI), / popup, mode-in-status ----
+✅ CLI commands: /whoami now works WITHOUT --login (shows OS user via session_user); new
+   /login (sign in mid-session → enables /users·/passwd); /user = alias for /users. HELP updated.
+✅ / popup: PromptSession complete_style=MULTI_COLUMN → typing '/' pops the command grid.
+✅ TUI BUG FIXED: _submit fell through unknown-but-valid commands (/usage /hooks /sessions
+   /whoami /model) to _ask() → they were SENT TO THE MODEL as questions. Now each is handled
+   (usage/sessions/whoami/model/hooks) + CLI-only ones (login/passwd/users/summarize) show
+   "use the CLI" instead of asking the model. only action=='ask' reaches _ask.
+✅ MODE-IN-STATUS BUG FIXED: title_screen showed "monitor · read-only" even in --team
+   (only checked workspace). Now takes the real mode string (= subtitle: team/workspace/
+   read-only + user) + extras [+verify, auto-model, web]. TUI status "monitor · read-only"
+   is correct (TUI is always monitor). Verified render for all modes.
+✅ tests/test_cli_commands.py +3 (every menu cmd is real; /login·/user alias; TUI handles
+   all cmds w/o asking the model). 278 tests pass.
+🧱 coder:7b STILL STUCK at 99.6% (4.68GB/4.7GB) — restart didn't help; final chunk fails on
+   flaky DNS. Options pending: set stable DNS (1.1.1.1) / switch to coder:3b / keep retrying.
+
 ---- 2026-06-13 — Polish: steering error messages + few-shot (Anthropic refinements) ----
 ✅ ai/fs_tools.py: edit_file "old_string not found" → now STEERS: "read_file '<path>' first
    and copy exact text incl. indentation (file has N lines)" + whitespace-hint when the

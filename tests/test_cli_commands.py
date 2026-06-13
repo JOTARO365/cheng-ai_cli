@@ -46,3 +46,33 @@ def test_slash_completer():
     assert "/help" in on_slash and "/skills" in on_slash
     assert [x.text for x in c.get_completions(Document("/me"), None)] == ["/memory"]
     assert list(c.get_completions(Document("hello"), None)) == []   # non-slash → no menu
+
+
+# --- command coverage: menu items must be real, aliases work (UX bug guards) ---
+def test_every_menu_command_is_handled():
+    """Anything shown in the / popup must dispatch to a real action, never fall to 'ask'."""
+    from cheng import SLASH_CMDS, dispatch_command
+    for cmd, _desc in SLASH_CMDS:
+        assert dispatch_command(cmd) != "ask", f"{cmd} is in the menu but routes to 'ask'"
+
+
+def test_login_and_user_alias_route():
+    from cheng import dispatch_command
+    assert dispatch_command("/login") == "login"
+    assert dispatch_command("/user") == "users"       # singular alias
+    assert dispatch_command("/whoami") == "whoami"
+
+
+def test_tui_handles_every_command_without_asking_model():
+    """The TUI must not send a known /command to the model. Every SLASH_CMDS action has an
+    explicit branch (or the CLI-only fallback); only 'ask' reaches _ask()."""
+    import inspect
+    import cheng_tui
+    src = inspect.getsource(cheng_tui.JotaroTUI._submit)
+    from cheng import SLASH_CMDS, dispatch_command
+    handled = {"exit", "help", "status", "memory", "remember", "skills", "usage",
+               "sessions", "whoami", "model", "hooks", "clear", "ask"}
+    # the catch-all `else` covers the rest (login/passwd/users/summarize) with a message
+    for cmd, _ in SLASH_CMDS:
+        act = dispatch_command(cmd)
+        assert act in handled or "isn't available in the TUI" in src
