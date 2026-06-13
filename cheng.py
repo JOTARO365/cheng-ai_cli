@@ -47,6 +47,7 @@ from prompt_toolkit.shortcuts import CompleteStyle
 from ai.auth import Auth, AuthError, User
 from ai.brain import Brain, OllamaUnavailable, _CJK
 from ai.excel_tools import EXCEL_TOOL_SPECS, EXCEL_WRITE_TOOLS, make_excel_dispatcher
+from ai.code_tools import CODE_TOOL_SPECS, CODE_WRITE_TOOLS, make_code_dispatcher
 from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, diff_for, make_fs_dispatcher
 from ai.hooks import default_safe_hooks
 from ai.shell_tools import SHELL_TOOL_SPECS, SHELL_WRITE_TOOLS, make_shell_dispatcher
@@ -423,6 +424,9 @@ def make_confirm(base) -> "Callable[[str, dict], bool]":
             # parsed as markup — the user must see exactly what will run.
             console.print(Text.assemble(("⏺ ", CORAL), ("run_command  ", "bold"),
                                         (str(args.get("command", "")), "yellow")))
+        elif name == "run_python":
+            console.print(Text.assemble(("⏺ ", CORAL), ("run_python", "bold")))
+            console.print(Text(str(args.get("code", "")), style="yellow"))   # show the code verbatim
         elif name in ("edit_file", "write_file"):
             console.print(Text.assemble(("⏺ ", CORAL), (name + "  ", "bold"),
                                         (str(args.get("path", "")), "yellow")))
@@ -443,9 +447,9 @@ def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
         return Brain.from_config(cfg, db, **skill_kw)
 
     base = Path(workspace).resolve()
-    fs_d, xl_d, sh_d = (make_fs_dispatcher(base), make_excel_dispatcher(base),
-                        make_shell_dispatcher(base))
-    tools = FS_TOOL_SPECS + EXCEL_TOOL_SPECS + SHELL_TOOL_SPECS
+    fs_d, xl_d, sh_d, cd_ = (make_fs_dispatcher(base), make_excel_dispatcher(base),
+                             make_shell_dispatcher(base), make_code_dispatcher(base))
+    tools = FS_TOOL_SPECS + EXCEL_TOOL_SPECS + SHELL_TOOL_SPECS + CODE_TOOL_SPECS
     system = SYSTEM_FS
 
     web_d = None
@@ -468,7 +472,7 @@ def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
             console.print(f"[yellow]MCP load failed:[/yellow] {exc}")
 
     def dispatcher(name: str, args: dict):
-        if web_d and name == "web_search":
+        if web_d and name in ("web_search", "fetch_url"):
             return web_d(name, args)
         if mcp_client and name in mcp_client.names():
             return mcp_client.dispatch(name, args)
@@ -476,11 +480,13 @@ def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
             return xl_d(name, args)
         if name == "run_command":
             return sh_d(name, args)
+        if name == "run_python":
+            return cd_(name, args)
         return fs_d(name, args)
 
     return Brain.from_config(
         cfg, db, system=system, tools=tools, dispatcher=dispatcher,
-        confirm_tools=WRITE_TOOLS | EXCEL_WRITE_TOOLS | SHELL_WRITE_TOOLS,
+        confirm_tools=WRITE_TOOLS | EXCEL_WRITE_TOOLS | SHELL_WRITE_TOOLS | CODE_WRITE_TOOLS,
         confirm=make_confirm(base), **skill_kw,
     )
 
