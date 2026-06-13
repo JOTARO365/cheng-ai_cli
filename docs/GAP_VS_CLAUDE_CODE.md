@@ -6,7 +6,7 @@ Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ par
 | # | Harness capability | Claude Code | JOTARO | Notes / gap |
 |---|---|---|---|---|
 | 1 | **Loop / stop condition** | ✅ | ✅ | `max_steps` cap (6). Loop is code-owned (ReAct). |
-| 1b| ↳ tool-error recovery | ✅ | ◑ | Built-in dispatchers catch their own errors → fed back as `{error}`. But the loop does **not** wrap `_execute`, so a *raising* tool (buggy MCP/custom) crashes the turn. |
+| 1b| ↳ tool-error recovery | ✅ | ✅ | **Fixed.** The loop wraps `_execute`: a *raising* tool (buggy MCP/custom) is caught, the error is fed back as a tool message, and the model recovers — the turn no longer crashes. `KeyboardInterrupt`/`SystemExit` still propagate. |
 | 1c| ↳ network retry/backoff | ✅ | ✗ | One Ollama failure → `OllamaUnavailable`, no retry/backoff. |
 | 2 | **Context management** (compaction) | ✅ auto-compact | ✗ | **Biggest gap.** History grows unbounded; no token budget, no summarize-old-turns. Long sessions will eventually overflow the model context. (We *do* have `fan_out_summarize` — but for files, not the conversation.) |
 | 3 | **Tool & skill registry** | ✅ | ✅ | Tools + progressive-loading `SKILL.md` (`find_skill`/`load_skill`), per-skill toggle. |
@@ -45,7 +45,7 @@ Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ par
 
 ## Priority gaps (ranked)
 1. **Conversation context compaction (#2)** — without it, long sessions overflow. *Highest value.*
-2. **Tool-error isolation in the loop (#1b)** — one buggy tool shouldn't kill the turn. *Cheap, high value.*
+2. ~~Tool-error isolation in the loop (#1b)~~ — **DONE** (2026-06-13): loop catches a raising tool and feeds the error back. See `tests/test_hardcore.py::test_tool_exception_is_isolated`.
 3. **Session persistence / resume (#6)** — quality-of-life; reuse the SQLite store.
 4. **Configurable hooks (#8)** — pre/post-tool guard points (e.g. block `rm -rf`).
 5. **Diff preview on edit (#5/UX)** — show a real diff in the confirm prompt.

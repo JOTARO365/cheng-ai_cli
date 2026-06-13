@@ -64,20 +64,49 @@ def test_runaway_tool_loop_stops_at_max_steps(db, monkeypatch):
     assert len([m for m in b.new_history()]) >= 1
 
 
-def test_tool_exception_is_not_isolated(db, monkeypatch):
-    """GAP (#1b): a tool that *raises* (not returns {error}) crashes the turn — the
-    loop does not wrap _execute. Pins current behavior; fix = wrap and feed back."""
-    _scripted_post(monkeypatch, [
+def test_tool_exception_is_isolated(db, monkeypatch):
+    """FIXED (#1b): a tool that *raises* must not crash the turn — the loop wraps
+    _execute, feeds the error back, and lets the model produce a final answer."""
+    # 1st: model calls the bad tool. 2nd: model recovers and answers normally.
+    msgs = [
         {"role": "assistant", "content": "",
          "tool_calls": [{"function": {"name": "boom", "arguments": {}}}]},
-    ])
+        {"role": "assistant", "content": "the tool failed, here is what I can say"},
+    ]
+    calls = {"n": 0}
+
+    def fake_post(url, json=None, timeout=None):
+        i = min(calls["n"], len(msgs) - 1)
+        calls["n"] += 1
+        return _Resp(msgs[i])
+
+    monkeypatch.setattr(brain_mod.httpx, "post", fake_post)
 
     def raising_dispatch(name, args):
         raise RuntimeError("tool blew up")
 
     b = Brain("http://x", "m", db, tools=[], dispatcher=raising_dispatch)
-    with pytest.raises(RuntimeError):
-        b.ask(b.new_history(), "trigger the bad tool")
+    history = b.new_history()
+    answer = b.ask(history, "trigger the bad tool")        # must NOT raise
+    assert "here is what I can say" in answer
+    # the error was fed back as a tool message so the model could see it
+    tool_msgs = [m for m in history if m.get("role") == "tool"]
+    assert tool_msgs and "failed" in tool_msgs[0]["content"]
+
+
+def test_keyboardinterrupt_is_not_swallowed(db, monkeypatch):
+    """A user Ctrl-C during a tool must still propagate (it's BaseException, not caught)."""
+    _scripted_post(monkeypatch, [
+        {"role": "assistant", "content": "",
+         "tool_calls": [{"function": {"name": "boom", "arguments": {}}}]},
+    ])
+
+    def interrupting_dispatch(name, args):
+        raise KeyboardInterrupt
+
+    b = Brain("http://x", "m", db, tools=[], dispatcher=interrupting_dispatch)
+    with pytest.raises(KeyboardInterrupt):
+        b.ask(b.new_history(), "ctrl-c please")
 
 
 # ===========================================================================

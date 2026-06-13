@@ -185,7 +185,15 @@ class Brain:
                 args = _as_args(fn.get("arguments"))
                 if on_tool:
                     on_tool(name, args)
-                result = self._execute(name, args)
+                # tool-error isolation: a tool that *raises* (buggy MCP/custom tool)
+                # must not kill the turn — feed the error back so the model can recover
+                # or report it. (OllamaUnavailable comes from _chat, not here; Keyboard-
+                # Interrupt/SystemExit are BaseException, so `except Exception` won't eat them.)
+                try:
+                    result = self._execute(name, args)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("tool %r raised, isolating: %s", name, exc)
+                    result = {"error": f"tool {name!r} failed: {exc}"}
                 if on_result:
                     on_result(name, result)
                 history.append(_tool_msg(name, result))
