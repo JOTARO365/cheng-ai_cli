@@ -60,6 +60,17 @@ CREATE TABLE IF NOT EXISTS memory (
     kind  TEXT NOT NULL DEFAULT 'fact',      -- fact | correction | preference
     text  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS users (
+    username      TEXT PRIMARY KEY,
+    pw_hash       TEXT NOT NULL,             -- PBKDF2-HMAC-SHA256 hex (never plaintext)
+    salt          TEXT NOT NULL,             -- per-user random salt, hex
+    role          TEXT NOT NULL DEFAULT 'user',   -- admin | user
+    created_at    TEXT NOT NULL,
+    last_login    TEXT,
+    failed        INTEGER NOT NULL DEFAULT 0,      -- consecutive failed logins
+    locked_until  TEXT                             -- ISO8601 UTC; NULL = not locked
+);
 """
 
 
@@ -234,6 +245,68 @@ class Database:
     def forget_memory(self, mem_id: int) -> None:
         with self._conn() as conn:
             conn.execute("DELETE FROM memory WHERE id = ?", (mem_id,))
+
+    # ---- users (username/password login) ---------------------------------
+    # Storage only — hashing / lockout policy lives in ai/auth.py. We keep the
+    # hash + salt here, never a plaintext password.
+    def create_user(self, username: str, pw_hash: str, salt: str,
+                    role: str = "user") -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO users (username, pw_hash, salt, role, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (username, pw_hash, salt, role, utcnow()),
+            )
+
+    def get_user(self, username: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE username = ?", (username,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_users(self) -> list[dict[str, Any]]:
+        """Public view — no hash/salt. Admins first, then alphabetical."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT username, role, created_at, last_login FROM users "
+                "ORDER BY (role = 'admin') DESC, username"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_users(self) -> int:
+        with self._conn() as conn:
+            return int(conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"])
+
+    def delete_user(self, username: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
+            return cur.rowcount > 0
+
+    def set_user_password(self, username: str, pw_hash: str, salt: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE users SET pw_hash = ?, salt = ?, failed = 0, locked_until = NULL "
+                "WHERE username = ?",
+                (pw_hash, salt, username),
+            )
+
+    def touch_user_login(self, username: str) -> None:
+        """Record a successful login: stamp time, clear the failure/lock counters."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE users SET last_login = ?, failed = 0, locked_until = NULL "
+                "WHERE username = ?",
+                (utcnow(), username),
+            )
+
+    def set_user_lock(self, username: str, failed: int,
+                      locked_until: str | None) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE users SET failed = ?, locked_until = ? WHERE username = ?",
+                (failed, locked_until, username),
+            )
 
     # ---- snapshot reads (the "tools" the chatbot answers from) ------------
     # These are READ-ONLY and return plain JSON-ready dicts so the FastAPI tool

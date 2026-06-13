@@ -13,6 +13,7 @@ Commands:  /help   /status   /clear   /exit
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import re
 import sys
@@ -38,6 +39,7 @@ from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import InMemoryHistory
 
+from ai.auth import Auth, AuthError, User
 from ai.brain import Brain, OllamaUnavailable, _CJK
 from ai.excel_tools import EXCEL_TOOL_SPECS, EXCEL_WRITE_TOOLS, make_excel_dispatcher
 from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, make_fs_dispatcher
@@ -64,6 +66,9 @@ HELP = f"""\
   [bold]/memory[/]   list what's remembered
   [bold]/skills[/]   list skills · /skills on|off · /skills <dir> (load local, e.g. ~/.claude)
   [bold]/summarize[/] fan-out summarize a big file (chunk → sub-agents → merge)
+  [bold]/whoami[/]   show the signed-in user        [{MUTED}](--login)[/]
+  [bold]/passwd[/]   change your password           [{MUTED}](--login)[/]
+  [bold]/users[/]    manage users (admin): /users · add · passwd · del
   [bold]/clear[/]    clear the conversation context
   [bold]/exit[/]     quit  (or Ctrl-D)
 
@@ -101,6 +106,12 @@ def dispatch_command(text: str) -> str:
         return "skills"
     if c == "/summarize" or c.startswith("/summarize "):
         return "summarize"
+    if c == "/whoami":
+        return "whoami"
+    if c == "/passwd":
+        return "passwd"
+    if c == "/users" or c.startswith("/users "):
+        return "users"
     return "ask"
 
 
@@ -112,6 +123,9 @@ SLASH_CMDS = [
     ("/memory", "list what's remembered"),
     ("/skills", "list · on|off · load a dir"),
     ("/summarize", "fan-out summarize a file"),
+    ("/whoami", "show the signed-in user"),
+    ("/passwd", "change your password"),
+    ("/users", "manage users (admin)"),
     ("/clear", "reset the conversation"),
     ("/exit", "quit"),
 ]
@@ -297,6 +311,114 @@ def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
     )
 
 
+def _getpass(label: str) -> str:
+    """Hidden password prompt. Returns '' on Ctrl-C/EOF so callers can bail cleanly."""
+    try:
+        return getpass.getpass(f"  {label}: ")
+    except (EOFError, KeyboardInterrupt):
+        return ""
+
+
+def _bootstrap_admin(auth: Auth) -> User | None:
+    """First run: no users exist yet — create the initial admin interactively."""
+    console.print(Panel(
+        Text.from_markup(f"[{CORAL}]✻[/] [bold]Welcome to JOTARO[/]\n\n"
+                         f"[{MUTED}]No accounts yet — let's create the first admin.[/]"),
+        box=box.ROUNDED, border_style=CORAL, expand=False, padding=(1, 2)))
+    try:
+        username = console.input(f"  [{MUTED}]admin username[/] [dim](admin)[/]: ").strip() or "admin"
+    except (EOFError, KeyboardInterrupt):
+        return None
+    for _ in range(3):
+        pw, pw2 = _getpass("password"), _getpass("confirm ")
+        if pw != pw2:
+            console.print("  [red]✖[/] passwords don't match")
+            continue
+        try:
+            user = auth.register(username, pw, role="admin")
+        except AuthError as exc:
+            console.print(f"  [red]✖[/] {exc}")
+            continue
+        console.print(f"\n[green]✓[/] admin [bold]{user.username}[/] created — you're signed in.\n")
+        return user
+    return None
+
+
+def login_gate(db: Database) -> User | None:
+    """Sign the user in before the REPL. Returns the User, or None to abort startup."""
+    auth = Auth(db)
+    if not auth.has_users():
+        return _bootstrap_admin(auth)
+    console.print(f"\n[{CORAL}]✻[/] [bold]JOTARO login[/]  [{MUTED}]· sign in to continue[/]")
+    for _ in range(3):
+        try:
+            username = console.input(f"  [{MUTED}]username:[/] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        ok, user, msg = auth.authenticate(username, _getpass("password"))
+        if ok and user is not None:
+            console.print(f"[green]✓[/] welcome, [bold]{user.username}[/] [{MUTED}]({user.role})[/]\n")
+            return user
+        console.print(f"  [red]✖[/] {msg}")
+    console.print("[red]login failed — exiting.[/]")
+    return None
+
+
+def _cmd_passwd(auth: Auth, user: User) -> None:
+    """`/passwd` — change your own password (verifies the current one)."""
+    old = _getpass("current password")
+    new, new2 = _getpass("new password    "), _getpass("confirm new     ")
+    if new != new2:
+        console.print("  [red]✖[/] new passwords don't match")
+        return
+    try:
+        auth.change_password(user.username, old, new)
+        console.print(f"[green]✓[/] password updated for [bold]{user.username}[/]")
+    except AuthError as exc:
+        console.print(f"  [red]✖[/] {exc}")
+
+
+def _cmd_users(auth: Auth, user: User, text: str) -> None:
+    """`/users [add|del|passwd <name>]` — admin-only user management."""
+    toks = text.split()
+    if not user.is_admin:
+        console.print(f"  [red]✖[/] only an admin can manage users")
+        return
+    if len(toks) == 1:                                   # list
+        for u in auth.list_users():
+            tag = "[cyan]admin[/]" if u["role"] == "admin" else f"[{MUTED}]user[/] "
+            last = u["last_login"] or "never"
+            console.print(f"  {tag}  [bold]{u['username']}[/]  [{MUTED}]last: {last}[/]")
+        return
+    action = toks[1].lower()
+    if action in ("add", "passwd") and len(toks) >= 3:
+        name = toks[2]
+        pw, pw2 = _getpass("password"), _getpass("confirm ")
+        if pw != pw2:
+            console.print("  [red]✖[/] passwords don't match")
+            return
+        try:
+            if action == "add":
+                auth.register(name, pw, role="user")
+                console.print(f"[green]✓[/] user [bold]{name}[/] created")
+            else:
+                auth.reset_password(name, pw)
+                console.print(f"[green]✓[/] password reset for [bold]{name}[/]")
+        except AuthError as exc:
+            console.print(f"  [red]✖[/] {exc}")
+    elif action in ("del", "delete", "rm") and len(toks) >= 3:
+        name = toks[2]
+        if name == user.username:
+            console.print("  [red]✖[/] you can't delete yourself")
+        elif auth.delete_user(name):
+            console.print(f"[green]✓[/] user [bold]{name}[/] removed")
+        else:
+            console.print(f"  [{MUTED}]no such user: {name}[/]")
+    else:
+        console.print(f"  [{MUTED}]usage: /users · /users add <name> · "
+                      f"/users passwd <name> · /users del <name>[/]")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="JOTARO AI CLI — SME IT Agent")
     parser.add_argument("--ask", metavar="QUESTION",
@@ -316,10 +438,20 @@ def main() -> None:
                         help="disable web search in workspace mode (workspace is online by default)")
     parser.add_argument("--mcp", metavar="CONFIG",
                         help="connect to MCP servers from a JSON config (their tools become callable)")
+    parser.add_argument("--login", action="store_true",
+                        help="require username/password sign-in before the session "
+                             "(first run creates an admin account)")
     args = parser.parse_args()
 
     cfg = load_config()
     db = Database(cfg.db_path)
+
+    auth = Auth(db)
+    current_user: User | None = None
+    if args.login:
+        current_user = login_gate(db)
+        if current_user is None:
+            sys.exit(1)
     from ai.skills import DEFAULT_SKILLS_DIR
     skill_kw = {"skills_dir": args.skills or DEFAULT_SKILLS_DIR,
                 "skills_enabled": not args.no_skills}
@@ -332,6 +464,8 @@ def main() -> None:
     subtitle = ("team · security / network / service" if team
                 else f"workspace · {Path(args.workspace).resolve()}" if args.workspace
                 else "read-only · offline")
+    if current_user is not None:
+        subtitle += f" · {current_user.username}"
 
     def answer_turn(text: str, history: list) -> None:
         """Stream one answer (tokens) with ⏺/⎿ tool lines, a live status, + a footer.
@@ -527,6 +661,19 @@ def main() -> None:
             console.print(Text.assemble(("⏺ ", CORAL), ("summarize ", "bold"),
                           (f"{p.name} — {n} chunk(s) across sub-agents", MUTED)))
             console.print(Markdown(summary or "_(empty)_"))
+            continue
+        if action in ("whoami", "passwd", "users"):
+            if current_user is None:
+                console.print(f"  [{MUTED}]not signed in — start with [bold]--login[/] "
+                              f"to use accounts[/]")
+                continue
+            if action == "whoami":
+                console.print(f"  [bold]{current_user.username}[/] [{MUTED}]· "
+                              f"{current_user.role}[/]")
+            elif action == "passwd":
+                _cmd_passwd(auth, current_user)
+            else:
+                _cmd_users(auth, current_user, text)
             continue
         if action == "clear":
             history = [] if team else brain.new_history()

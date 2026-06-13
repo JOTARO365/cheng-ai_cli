@@ -19,6 +19,8 @@ from jotaro import SlashCompleter, _no_knowledge, dispatch_command
     ("/clear", "clear"),
     ("/model", "model"), ("/model qwen2.5:14b", "model"), ("  /MODEL llama3.2", "model"),
     ("/skills", "skills"), ("/summarize", "summarize"), ("/summarize big.md", "summarize"),
+    ("/whoami", "whoami"), ("/passwd", "passwd"),
+    ("/users", "users"), ("/users add bob", "users"), ("/USERS del bob", "users"),
     ("/exit", "exit"), ("/quit", "exit"), ("/q", "exit"),
     ("  /HELP  ", "help"),          # trimmed + case-insensitive
     ("/STATUS", "status"),
