@@ -1,6 +1,6 @@
 """MCP client — connect to Model Context Protocol servers and use their tools.
 
-This is how JOTARO gets an UNLIMITED toolset: point it at any MCP server (filesystem,
+This is how CHENG AI gets an UNLIMITED toolset: point it at any MCP server (filesystem,
 git, web, databases, your own) and its tools become callable like ours. The MCP SDK is
 async; Brain is sync — so we run an asyncio loop in a background thread that owns the
 sessions, and proxy each tool call through it (run_coroutine_threadsafe).

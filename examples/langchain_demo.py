@@ -29,7 +29,7 @@ def main() -> None:
     tid = "demo"
     for q in ["PC ไหนปิดอยู่บ้าง", "แล้วเครื่องไหน offline นานที่สุด"]:  # 2nd relies on memory
         print(f"\nIT> {q}")
-        print("JOTARO(LC):", ask(agent, q, thread_id=tid))
+        print("CHENG AI(LC):", ask(agent, q, thread_id=tid))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """Web search tool (opt-in) — the agent's window to the internet.
 
 OFF by design for the offline IT-monitor; enabled only for the general/workspace mode
-via `jotaro --web`. Uses DuckDuckGo (ddgs) — no API key. This is the ONE place the
+via `cheng --web`. Uses DuckDuckGo (ddgs) — no API key. This is the ONE place the
 general assistant reaches the internet, so keep it for looking things up, never for
 sending the company's private data out.
 """
@@ -14,7 +14,7 @@ from typing import Any, Callable
 import httpx
 
 log = logging.getLogger(__name__)
-_UA = {"User-Agent": "Mozilla/5.0 (JOTARO IT agent)"}
+_UA = {"User-Agent": "Mozilla/5.0 (CHENG AI IT agent)"}
 
 WEB_TOOL_SPECS: list[dict[str, Any]] = [
     {

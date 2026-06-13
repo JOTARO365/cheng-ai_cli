@@ -1,12 +1,12 @@
-# JOTARO MCP servers
+# CHENG AI MCP servers
 
-In-repo MCP servers you can plug into JOTARO with `--mcp` (no Node needed).
+In-repo MCP servers you can plug into CHENG AI with `--mcp` (no Node needed).
 
 ## search_server.py — web search + fetch
 Exposes two tools (`search`, `fetch`) over a pluggable backend. Connect it:
 
 ```powershell
-python jotaro.py --workspace --mcp mcp_servers/search.mcp.json
+python cheng.py --workspace --mcp mcp_servers/search.mcp.json
 ```
 
 ### Choosing a backend (env vars, checked in order)

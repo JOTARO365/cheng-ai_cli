@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import load_config                      # noqa: E402
-from jotaro import build_brain                      # noqa: E402
+from cheng import build_brain                      # noqa: E402
 from storage.db import Database                     # noqa: E402
 
 
@@ -38,9 +38,9 @@ def _run_one(brain, prompt: str) -> tuple[str, list[str]]:
 
 def main() -> int:
     cfg = load_config()
-    ws = Path(tempfile.mkdtemp(prefix="jotaro_prod_"))
+    ws = Path(tempfile.mkdtemp(prefix="cheng_prod_"))
     _seed(ws)
-    db = Database(ws / ".jotaro.db")
+    db = Database(ws / ".cheng.db")
     # workspace brain, web ON, auto-approve writes so edits actually run
     brain = build_brain(cfg, db, str(ws), web=True)
     brain.confirm = lambda name, args: True

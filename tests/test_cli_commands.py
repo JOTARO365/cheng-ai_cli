@@ -1,4 +1,4 @@
-"""Tests for JOTARO CLI slash-command dispatch (jotaro.dispatch_command).
+"""Tests for CHENG AI CLI slash-command dispatch (cheng.dispatch_command).
 
 The prompt_toolkit REPL can't be driven headless on Windows, so the command routing
 is a pure function we test directly — covers every /command + aliases + the 'ask'
@@ -10,7 +10,7 @@ import pytest
 
 from prompt_toolkit.document import Document
 
-from jotaro import SlashCompleter, _no_knowledge, dispatch_command
+from cheng import SlashCompleter, _no_knowledge, dispatch_command
 
 
 @pytest.mark.parametrize("text, action", [

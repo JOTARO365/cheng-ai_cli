@@ -1,4 +1,4 @@
-"""Local-model agent loop (the harness around Ollama) for JOTARO AI CLI.
+"""Local-model agent loop (the harness around Ollama) for CHENG AI CLI.
 
 The HARNESS owns the loop, not the model (ReAct): send the question + tool specs to
 Ollama → if the model asks for a tool, WE run it and feed the result back → repeat

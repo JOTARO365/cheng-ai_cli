@@ -144,7 +144,7 @@ def _cli() -> None:
 
     from config import load_config
 
-    parser = argparse.ArgumentParser(description="JOTARO file assistant (PydanticAI)")
+    parser = argparse.ArgumentParser(description="CHENG AI file assistant (PydanticAI)")
     parser.add_argument("--workspace", default=".",
                         help="folder to operate in (default: current directory)")
     parser.add_argument("--ask", help="one-shot question, then exit")
@@ -159,7 +159,7 @@ def _cli() -> None:
         print(f"  ⚠ confirm write: {tool}({preview})")
         return input("  proceed? [y/N] ").strip().lower() in ("y", "yes")
 
-    print(f"JOTARO file assistant (PydanticAI) · workspace: {base}")
+    print(f"CHENG AI file assistant (PydanticAI) · workspace: {base}")
     if args.ask:
         answer, _ = run(agent, args.ask, base, confirm)
         print(answer)

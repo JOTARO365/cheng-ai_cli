@@ -1,4 +1,4 @@
-"""Shell command tool for JOTARO's --workspace mode.
+"""Shell command tool for CHENG AI's --workspace mode.
 
 Lets the agent run a shell command (bash if available, else the OS shell) IN the
 workspace folder and read its output. This is powerful and dangerous, so:

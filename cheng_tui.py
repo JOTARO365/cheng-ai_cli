@@ -1,10 +1,10 @@
-"""JOTARO TUI — a full-screen terminal UI (Textual) for the SME IT Agent.
+"""CHENG AI TUI — a full-screen terminal UI (Textual) for the SME IT Agent.
 
 A real app UI: a status bar (model · mode · skills), a scrollable conversation log
 (mouse wheel works), and an input box. The model runs in a worker THREAD so the UI
 never freezes; tool calls (⏺) and results (⎿) stream into the log, then the answer.
 
-Run:  python jotaro_tui.py
+Run:  python cheng_tui.py
 Keys: Enter send · Ctrl+L clear · Ctrl+C quit · / for commands
 This v1 is monitor mode (read-only IT tools) + memory + skills. Reuses the same backend.
 """
@@ -20,7 +20,7 @@ from textual.widgets import Footer, Input, RichLog, Static
 
 from ai.brain import OllamaUnavailable
 from config import load_config
-from jotaro import HELP, SLASH_CMDS, _summarize, build_brain, dispatch_command
+from cheng import HELP, SLASH_CMDS, _summarize, build_brain, dispatch_command
 from storage.db import Database
 
 CORAL = "#d97757"
@@ -49,10 +49,10 @@ class JotaroTUI(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "JOTARO"
+        self.title = "CHENG AI"
         self.sub_title = "SME IT Agent · local · offline"
         log = self.query_one("#chat", RichLog)
-        log.write(Text("✻ JOTARO", style=f"bold {CORAL}"))
+        log.write(Text("✻ CHENG AI", style=f"bold {CORAL}"))
         log.write(Text("ask about offline PCs, login fails, lockouts, alerts — or /help",
                        style="grey58"))
         self.query_one("#prompt", Input).focus()

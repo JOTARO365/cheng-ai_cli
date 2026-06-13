@@ -1,4 +1,4 @@
-"""Tool registry for the local-model agent (JOTARO AI CLI).
+"""Tool registry for the local-model agent (CHENG AI CLI).
 
 ONE place that defines the IT-context tools the model may call, in the
 Ollama/OpenAI function-calling schema, plus a dispatcher that runs each against

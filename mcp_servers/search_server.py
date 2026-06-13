@@ -1,4 +1,4 @@
-"""JOTARO search MCP server — `search` + `fetch` tools over a pluggable backend.
+"""CHENG AI search MCP server — `search` + `fetch` tools over a pluggable backend.
 
 Pick the backend with env vars (checked in this order); no code change needed:
   1. GOOGLE_API_KEY + GOOGLE_CSE_ID  → real Google (Custom Search JSON API, free 100/day)
@@ -7,7 +7,7 @@ Pick the backend with env vars (checked in this order); no code change needed:
   4. (default)                        → DuckDuckGo via ddgs (free, no setup)
 
 Run standalone (stdio):  python mcp_servers/search_server.py
-Use from JOTARO:          python jotaro.py --workspace --mcp mcp_servers/search.mcp.json
+Use from CHENG AI:          python cheng.py --workspace --mcp mcp_servers/search.mcp.json
 
 Free Google in 5 min: console.cloud.google.com → enable "Custom Search API" → make an
 API key; programmablesearchengine.google.com → create an engine ("search entire web")
@@ -35,8 +35,8 @@ except Exception:  # keep the server usable even if run outside the project
     def _filter_results(rows, n):
         return rows[:n]
 
-mcp = FastMCP("jotaro-search")
-_UA = {"User-Agent": "Mozilla/5.0 (JOTARO)"}
+mcp = FastMCP("cheng-search")
+_UA = {"User-Agent": "Mozilla/5.0 (CHENG AI)"}
 TIMEOUT = 15
 
 

@@ -5,6 +5,15 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — REBRAND: JOTARO → CHENG AI ----
+✅ Product renamed JOTARO → "CHENG AI" everywhere. Files: jotaro.py→cheng.py,
+   jotaro_tui.py→cheng_tui.py, bin/jotaro-*.cmd→bin/cheng-*.cmd (git mv, history kept).
+   Commands now: cheng-ai / cheng-mon / cheng-team / cheng-tui. Module imports updated
+   (from cheng import ...). 32 files content-rewritten; brand strings → "CHENG AI",
+   "JOTARO AI CLI" → "CHENG AI CLI" (no double-AI). GitHub handle JOTARO365 left intact;
+   repo path → cheng-ai_cli. 217 tests still pass. PowerShell $PROFILE aliases updated to
+   cheng-*. GitHub repo renamed jotaro-ai_cli → cheng-ai_cli + git remote re-pointed.
+
 ## CURRENT STATUS (Phase-1 product loop now COMPLETE end-to-end)
 🟢 Collector → Rule Engine → REAL AI analysis (ai/escalate.py) + REAL alert dispatch
    (alert/dispatch.py, opt-in/no-op) — verified by sandbox: AI root-cause stored as
@@ -15,7 +24,7 @@ Updated  : 2026-06-10
 ✅ ai/skills.py: skill.md runbooks, progressive loading. Front-matter name+description
    injected as the trigger; full body via load_skill on demand. discover_skills reads
    one or many dirs (flat *.md or Claude-style <name>/SKILL.md, rglob) — `~/.claude` finds 65.
-   Toggle on/off. jotaro --skills DIR / --no-skills + /skills (list/on|off/load a dir).
+   Toggle on/off. cheng --skills DIR / --no-skills + /skills (list/on|off/load a dir).
    Brain auto-loads (default ./skills); Supervisor propagates to specialists.
 ✅ Section-level loading (context mgmt): split_sections + select_skill_content(skill, query)
    returns whole skill if small, else only keyword-matching section(s) + a TOC. On a real
@@ -26,15 +35,15 @@ Updated  : 2026-06-10
 
 ---- 2026-06-13 — Verifier, fan-out, UI polish, Full TUI ----
 ✅ Verifier (ai/verify.py): deterministic degeneracy check (catches small-model repetition
-   meltdown w/o a model call) + critic Brain (grounding). jotaro --verify. Also capped skill
+   meltdown w/o a model call) + critic Brain (grounding). cheng --verify. Also capped skill
    catalog at 30 (loading .claude's 65 into a 3B caused a hallucination loop — real finding).
 ✅ Fan-out (ai/parallel.py): parallel_map (capped threads) + fan_out_summarize (chunk →
-   sub-agents summarize in isolated context → merge = context firewall). jotaro /summarize.
+   sub-agents summarize in isolated context → merge = context firewall). cheng /summarize.
    Note: one Ollama serializes inference → win is context, not wall-clock.
 ✅ UI: slash-command popup menu (SlashCompleter, arrow-selectable) + ❯ prompt + bottom toolbar.
-✅ FULL TUI (jotaro_tui.py, Textual): status bar + scrollable chat (mouse) + input + worker
+✅ FULL TUI (cheng_tui.py, Textual): status bar + scrollable chat (mouse) + input + worker
    thread (UI never blocks) + ⏺/⎿ in log. monitor v1, reuses backend+memory+skills+commands.
-   bin/jotaro-tui.cmd. 121 tests.
+   bin/cheng-tui.cmd. 121 tests.
 💡 Q: does the MODEL learn from user data? NO — memory = inject facts into context (weights
    frozen). Correct tool for facts/RAG. Fine-tune (LoRA) = for style/skill, needs GPU (4GB
    can't), risks staleness — wrong tool for facts. Documented, not built.
@@ -49,7 +58,7 @@ Updated  : 2026-06-10
 ✅ ai/brain.py: hooks= param; _execute now wraps _execute_inner with run_pre (deny →
    {"status":"blocked by hook"} fed back to model; modify → swap args) + run_post. No
    hooks = pass-through. Every tool call (model-driven or internal) passes the chain.
-✅ jotaro.py: default_safe_hooks attached unless --no-hooks; /hooks lists active guards.
+✅ cheng.py: default_safe_hooks attached unless --no-hooks; /hooks lists active guards.
 ✅ tests/test_hooks.py (24): registry semantics, glob scoping, guard block/allow table,
    Brain block/modify/post/passthrough. 217 tests pass.
 ✅ LIVE VERIFIED: build_brain workspace + default hooks → "rm -rf /" and "Remove-Item
@@ -60,14 +69,14 @@ Updated  : 2026-06-10
 ✅ storage/db.py: sessions table (id, created/updated_at, label, history JSON) +
    save_session (upsert, label sticky, microsecond updated_at so re-save = latest),
    load_session, latest_session_id, list_sessions, delete_session.
-✅ jotaro.py: --continue (resume latest), --resume <id>, --sessions (list & exit),
+✅ cheng.py: --continue (resume latest), --resume <id>, --sessions (list & exit),
    /sessions in REPL, autosave after every non-team turn, /clear starts a NEW session.
    Team mode excluded (per-specialist history, no single thread to resume).
 ✅ tests/test_sessions.py (7): roundtrip+Thai, missing→None, sticky label, latest tracks
    re-save, list order/limit, delete. 193 tests pass.
 ✅ LIVE VERIFIED (qwen2.5:3b): launch1 learned "file server=SRV07, Chiang Mai" + autosaved;
    a FRESH Brain loaded the session from SQLite and answered the follow-up correctly
-   ("SRV07 อยู่ในสำนักงานเชียงใหม่"). Also `jotaro.py --sessions` lists with Thai labels intact.
+   ("SRV07 อยู่ในสำนักงานเชียงใหม่"). Also `cheng.py --sessions` lists with Thai labels intact.
 📌 GAP doc updated: #2 compaction, #1b tool-error, #6 resume all DONE. Next ranked: #8
    configurable hooks, then #5 edit diff-preview, #1c Ollama retry/backoff.
 
@@ -78,7 +87,7 @@ Updated  : 2026-06-10
    keep_recent_turns (2) user-turns verbatim. _recent_tail starts the kept slice at a
    user boundary so no tool result is orphaned from its call. on_compact(before,after)
    callback. Summarizer falls back to deterministic truncation if Ollama is down.
-✅ jotaro.py: _on_compact prints "⟳ compacted N → M chars"; wired into all 3 ask() paths.
+✅ cheng.py: _on_compact prints "⟳ compacted N → M chars"; wired into all 3 ask() paths.
 ✅ tests/test_compaction.py (6) + updated test_hardcore (#2 gap now FIXED). 186 tests pass.
 ✅ LIVE VERIFIED (qwen2.5:3b): forced budget=900 → compaction fired (2011→1885), the
    model summary preserved "print server=SRV01, Bangkok office", and the next question
@@ -87,9 +96,9 @@ Updated  : 2026-06-10
    (export 'OLLAMA_MODELS=D:\ollama-models'; mind shell backslash-stripping) or it sees 0 blobs.
 
 ## (history) CURRENT STATUS
-🟢 In progress : v0.1.0 — collectors + Rule Engine + sandbox + tool server + JOTARO CLI (34 tests)
+🟢 In progress : v0.1.0 — collectors + Rule Engine + sandbox + tool server + CHENG AI CLI (34 tests)
 
----- 2026-06-12 — JOTARO AI CLI (terminal tool-calling agent) + live stack up ----
+---- 2026-06-12 — CHENG AI CLI (terminal tool-calling agent) + live stack up ----
 ✅ Done:
   - ai/tools.py: single tool registry (5 IT tools in Ollama/OpenAI function-spec) +
     dispatch(name,args,db) with hours/limit clamps. Reused by the CLI agent;
@@ -97,13 +106,13 @@ Updated  : 2026-06-10
   - ai/brain.py: Brain = ReAct harness around Ollama /api/chat (tools). HARNESS owns
     the loop (max_steps cap), read-only tools, graceful OllamaUnavailable. Brain takes
     `system=` + `tools=` args → future supervisor can spawn SPECIALIST brains per use case.
-  - jotaro.py: branded REPL (rich banner + prompt_toolkit), Thai/EN, /help /status
+  - cheng.py: branded REPL (rich banner + prompt_toolkit), Thai/EN, /help /status
     /clear /exit, live ⚙ tool-call display, + `--ask "Q"` one-shot mode.
   - tests/test_brain.py: mock-Ollama ReAct flow + dispatch + unavailable fallback. 34 pass.
   - LIVE VERIFIED against running Ollama+qwen2.5:3b+seeded DB:
-    `jotaro.py --ask "PC ไหนปิดอยู่บ้าง"` → model called get_down_nodes → "PC20, PC12 ปิดอยู่".
+    `cheng.py --ask "PC ไหนปิดอยู่บ้าง"` → model called get_down_nodes → "PC20, PC12 ปิดอยู่".
     `--ask "login fail ใครเยอะสุด"` → get_login_fails → john 6 / nan 2. Tool-calling works on 3B.
-💡 Two interfaces now share ONE backend (Ollama + SQLite): Open WebUI (web) and JOTARO (CLI).
+💡 Two interfaces now share ONE backend (Ollama + SQLite): Open WebUI (web) and CHENG AI (CLI).
 🧱 RUNNING (this session, background tasks): ollama serve→D: (bjixs79a2), tool server :8000
    (bq7585yhm), open-webui :8080 (bhwmz1gb2). Open WebUI needs RAG_EMBEDDING_ENGINE=ollama
    (+ HF_HUB_OFFLINE=1) or it hangs on boot downloading the sentence-transformers model.
@@ -135,7 +144,7 @@ Updated  : 2026-06-10
   - ai/brain.py: permission gate (confirm_tools + confirm callback; declined→fed back, not run),
     pluggable dispatcher, temperature 0.2, + LANGUAGE GUARD (qwen2.5 leaks Chinese into Thai:
     regenerate up to 2x, then strip CJK as last resort). All backward-compatible.
-  - jotaro.py: rewrote UI = professional-retro (SESSION/MODEL/STATUS/TOOLS HUD, dropped
+  - cheng.py: rewrote UI = professional-retro (SESSION/MODEL/STATUS/TOOLS HUD, dropped
     arcade FIGHTER/PLAYER1/INSERT COIN). Added --workspace [DIR] (bare = cwd) → fs mode with
     interactive y/N confirm for writes. SYSTEM_FS persona added to prompts.py.
   - ai/pydantic_agent.py: PydanticAI runtime (OllamaProvider+OpenAIChatModel) driving the SAME
@@ -143,7 +152,7 @@ Updated  : 2026-06-10
     approval loop; workspace defaults to cwd. requirements-pydantic.txt (optional extra).
   - tests: test_fs_tools (sandbox/dispatch/gate), test_brain (+language guard), test_pydantic_agent
     (importorskip). 44 pass.
-  - LIVE VERIFIED: jotaro --workspace read via list_dir; PydanticAI `--ask` read via list_dir.
+  - LIVE VERIFIED: cheng --workspace read via list_dir; PydanticAI `--ask` read via list_dir.
 🐞 FINDING (3B model limits, not our bug): qwen2.5:3b (a) leaks Chinese — our Brain guard
   catches+strips it, but the PydanticAI path does NOT (guard is Brain-only → would need an
   @agent.output_validator port); (b) weak at chaining tools (list_dir then didn't read_file).
@@ -164,39 +173,39 @@ Updated  : 2026-06-10
     question DETERMINISTICALLY by keyword (zero LLM calls — offline-friendly; swap
     route() body for an LLM router later). security={login_fails,locked_accounts},
     network={down_nodes}, service={recent_alerts,system_summary}.
-  - jotaro.py: --team mode routes each question to a specialist, panel subtitle shows
+  - cheng.py: --team mode routes each question to a specialist, panel subtitle shows
     which one answered. respond() unifies single/workspace/team. /clear, --ask work in all.
   - tests/test_specialists.py: routing (TH+EN) + tool-subset + build. 53 tests pass.
-  - LIVE VERIFIED: `jotaro --team --ask "login fail ใครเยอะสุด"` → routed to security →
+  - LIVE VERIFIED: `cheng --team --ask "login fail ใครเยอะสุด"` → routed to security →
     get_login_fails → clean Thai answer (john 6 / nan 2), NO Chinese leak.
 💡 Brain(system=, tools=subset) carried the whole Phase C with no Brain changes — the
   decoupling paid off. Fewer tools per specialist also helps the 3B pick the right tool.
 🔭 GitHub harness Chachamaru127/claude-code-harness evaluated → NOT usable (Claude-only
   dev-workflow harness in Shell/Go, not an embeddable offline-Ollama runtime). Kept our own.
-🧱 JOTARO now has modes: (default) monitor · --workspace [DIR] file assistant w/ write-confirm ·
+🧱 CHENG AI now has modes: (default) monitor · --workspace [DIR] file assistant w/ write-confirm ·
   --team specialist routing. Three runtimes still: Brain / LangGraph adapter / PydanticAI.
 
 ---- 2026-06-12 — Claude-Code-style UI + global alias ----
 ✅ Done:
-  - jotaro.py UI restyled to Claude Code / Codex look: rounded welcome panel (box.ROUNDED,
+  - cheng.py UI restyled to Claude Code / Codex look: rounded welcome panel (box.ROUNDED,
     coral #d97757 accent), ✻ wordmark, ⏺ markers for tool calls, answers as flowing markdown
     (no heavy box), clean muted palette. Replaced the 8-bit arcade theme.
-  - PowerShell $PROFILE aliases (CurrentUserAllHosts): jotaro-ai (file assistant in CWD),
-    jotaro-mon (monitor), jotaro-team (specialist routing) — guarded block w/ marker so re-run
-    is idempotent. `jotaro-ai` in any folder = file AI sandboxed to that folder.
-  - VERIFIED: 53 tests pass; jotaro imports clean; `jotaro-ai --ask` run from D:\sandbox\alias_try
+  - PowerShell $PROFILE aliases (CurrentUserAllHosts): cheng-ai (file assistant in CWD),
+    cheng-mon (monitor), cheng-team (specialist routing) — guarded block w/ marker so re-run
+    is idempotent. `cheng-ai` in any folder = file AI sandboxed to that folder.
+  - VERIFIED: 53 tests pass; cheng imports clean; `cheng-ai --ask` run from D:\sandbox\alias_try
     → list_dir → correct answer, clean Thai. No bugs found.
 
 ---- 2026-06-12 — Published to GitHub + cross-terminal launchers ----
 ✅ Done:
-  - bin/jotaro-ai.cmd / jotaro-mon.cmd / jotaro-team.cmd: portable launchers (use %~dp0 →
-    find jotaro.py relative to themselves). Added bin/ to USER PATH → `jotaro-ai` works in
+  - bin/cheng-ai.cmd / cheng-mon.cmd / cheng-team.cmd: portable launchers (use %~dp0 →
+    find cheng.py relative to themselves). Added bin/ to USER PATH → `cheng-ai` works in
     ANY terminal (cmd/PowerShell/pwsh) from any folder (file assistant scoped to cwd).
     NOTE: open a NEW terminal to pick up PATH. (Also kept $PROFILE functions for PS.)
   - README.md written. .gitignore hardened (+.webui_secret_key, /workspace/, sandbox/ws_demo,
     sandbox/alias_try, .claude/settings.local.json).
   - git init + initial commit + PydanticAI-guard commit, pushed to
-    https://github.com/JOTARO365/jotaro-ai_cli (main). gh auth = JOTARO365. Verified NO
+    https://github.com/JOTARO365/cheng-ai_cli (main). gh auth = JOTARO365. Verified NO
     secrets/db/logs staged.
   - ai/pydantic_agent.py: added @agent.output_validator that strips CJK (reuses ai.brain._CJK)
     → PydanticAI runtime no longer leaks Chinese. All 3 runtimes now language-guarded. 53 tests.
@@ -213,7 +222,7 @@ Updated  : 2026-06-10
     excel_append_row/excel_create confirmed. Shares fs path-jail. EXCEL_WRITE_TOOLS.
   - ai/shell_tools.py: run_command runs in workspace (bash if present, else OS shell),
     ALWAYS confirmed, timeout + output capture/truncate. _confirm shows FULL command.
-  - jotaro --workspace now COMBINES fs + excel + shell (route excel_*→excel, run_command→shell,
+  - cheng --workspace now COMBINES fs + excel + shell (route excel_*→excel, run_command→shell,
     else fs) behind one path-jail + permission gate. SYSTEM_FS updated. 77 tests pass. Pushed.
 🐞 Live finding (3B reasoning, not a tool bug): asked "who's in HR", model passed sheet="HR"
   (a dept value) instead of reading rows of the only sheet → wrong answer. excel_read itself
@@ -232,7 +241,7 @@ Updated  : 2026-06-10
   miss). So "3B+harness ≈ N B" has no single answer: fact-accuracy ≈ big model; planning ≈ 3B.
 
 ---- 2026-06-12 — Streaming/UX + Excel specialist + Memory (learn from user) ----
-✅ Streaming: Brain on_token (Ollama stream=true) → jotaro streams tokens (CJK-stripped),
+✅ Streaming: Brain on_token (Ollama stream=true) → cheng streams tokens (CJK-stripped),
   ⏺ tool / ⎿ result lines, transient "· thinking/running…" status, /model (list+switch),
   read-only grep/glob (find_files/search_text). UI = Claude-Code style.
 ✅ Excel specialist: smart read-only tools (excel_find_rows by column value, excel_aggregate
@@ -241,7 +250,7 @@ Updated  : 2026-06-10
   sheet=HR miss FIXED); fact 25% (mostly scorer number-format artifact + 3B phrasing).
 ✅ Memory subsystem (learn from user across sessions): db memory table + add/search/recent/
   forget; remember/recall tools merged into EVERY Brain (handled in _execute); new_history()
-  injects recent memories into the system prompt; jotaro /remember + /memory. Learning lives
+  injects recent memories into the system prompt; cheng /remember + /memory. Learning lives
   in the harness store, not the frozen model. LIVE: stored "SRV1-FILE is print server" →
   recalled correctly next run. 91 tests. Pushed (2d7aa57).
 ⏳ STILL PENDING: item 2 product integration (specialist→Rule Engine escalation replacing

@@ -1,11 +1,11 @@
-"""Username/password login for JOTARO — stdlib only, no external crypto dep.
+"""Username/password login for CHENG AI — stdlib only, no external crypto dep.
 
 Passwords are NEVER stored in plaintext. We keep a PBKDF2-HMAC-SHA256 hash with a
 per-user random salt and compare in constant time (hmac.compare_digest). Repeated
 wrong guesses trigger a temporary lockout to slow brute force. Everything lives in
 the same offline SQLite store (*.db is gitignored — never commit it).
 
-This module is pure policy + storage glue; the interactive prompts live in jotaro.py
+This module is pure policy + storage glue; the interactive prompts live in cheng.py
 so the logic here stays unit-testable.
 """
 from __future__ import annotations

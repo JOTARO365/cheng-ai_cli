@@ -124,5 +124,5 @@ def dangerous_shell_guard(name: str, args: dict[str, Any]) -> HookDecision:
 
 
 def default_safe_hooks() -> HookRegistry:
-    """The hooks JOTARO installs by default (disable with --no-hooks)."""
+    """The hooks CHENG AI installs by default (disable with --no-hooks)."""
     return HookRegistry().pre("run_command", dangerous_shell_guard)

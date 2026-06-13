@@ -1,6 +1,6 @@
 """HARDCORE tier — adversarial / stress probes against the harness.
 
-Where JOTARO is robust these PASS (path-jail, malformed args, caps, lockout).
+Where CHENG AI is robust these PASS (path-jail, malformed args, caps, lockout).
 Where there's a known gap (no context compaction, tool-exception not isolated,
 max_steps truncation) the test PINS the *current* behavior so the gap is explicit and
 will fail loudly the day we fix it — each such test is tagged GAP in a comment.

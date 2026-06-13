@@ -1,4 +1,4 @@
-"""Filesystem tools for JOTARO's --workspace mode (read / edit / write).
+"""Filesystem tools for CHENG AI's --workspace mode (read / edit / write).
 
 SEPARATE from the read-only IT-monitor tools (ai/tools.py): these MUTATE files, so
 they live behind two guards the monitor never needed —

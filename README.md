@@ -1,4 +1,4 @@
-# JOTARO AI CLI
+# CHENG AI CLI
 
 A **local-first AI assistant for your terminal** — a small, hand-rolled **agent
 harness** over [Ollama](https://ollama.com) with a full tool belt (files, Excel,
@@ -51,10 +51,10 @@ One shared backend (Ollama + SQLite), four entrypoints:
 
 | command | mode | what it does |
 |---|---|---|
-| `jotaro-mon` / `python jotaro.py` | monitor | **offline, read-only** IT tools: offline nodes, login fails, lockouts, alerts |
-| `jotaro-ai` / `python jotaro.py --workspace` | file assistant | read/edit/write files in the current folder + web/excel/shell — writes ask first |
-| `jotaro-team` / `python jotaro.py --team` | specialist routing | a supervisor routes each question to a security / network / service agent |
-| `jotaro-tui` / `python jotaro_tui.py` | full TUI | a Textual full-screen interface (status bar / chat log / input) |
+| `cheng-mon` / `python cheng.py` | monitor | **offline, read-only** IT tools: offline nodes, login fails, lockouts, alerts |
+| `cheng-ai` / `python cheng.py --workspace` | file assistant | read/edit/write files in the current folder + web/excel/shell — writes ask first |
+| `cheng-team` / `python cheng.py --team` | specialist routing | a supervisor routes each question to a security / network / service agent |
+| `cheng-tui` / `python cheng_tui.py` | full TUI | a Textual full-screen interface (status bar / chat log / input) |
 
 ## Quickstart
 ```powershell
@@ -68,18 +68,18 @@ pip install -r requirements.txt
 python -m sandbox.seed_demo
 
 # 4. run
-python jotaro.py                                   # monitor REPL (offline)
-python jotaro.py --workspace --ask "what files are here?"
-python jotaro.py --workspace --login               # require sign-in first
-python jotaro.py --team                            # specialist routing
+python cheng.py                                   # monitor REPL (offline)
+python cheng.py --workspace --ask "what files are here?"
+python cheng.py --workspace --login               # require sign-in first
+python cheng.py --team                            # specialist routing
 ```
 
 Optional extras (only if you want those runtimes):
 `pip install -r requirements-langchain.txt` · `pip install -r requirements-pydantic.txt`
 
 ### Global command (any terminal)
-`bin/` holds portable launchers (`jotaro-ai.cmd`, `jotaro-mon.cmd`, `jotaro-team.cmd`,
-`jotaro-tui.cmd`). Add `bin/` to your PATH and type `jotaro-ai` in any folder to launch
+`bin/` holds portable launchers (`cheng-ai.cmd`, `cheng-mon.cmd`, `cheng-team.cmd`,
+`cheng-tui.cmd`). Add `bin/` to your PATH and type `cheng-ai` in any folder to launch
 the assistant scoped to that folder.
 
 ## In-session commands
@@ -101,7 +101,7 @@ cleanup, language-aware region, and junk/duplicate filtering.
 For a real Google-quality backend, run the in-repo MCP search server, which picks a
 backend from env (Google Custom Search API → SearXNG → Google-scrape → DuckDuckGo):
 ```powershell
-python jotaro.py --workspace --mcp mcp_servers/search.mcp.json
+python cheng.py --workspace --mcp mcp_servers/search.mcp.json
 ```
 See `mcp_servers/README.md` for the free Google Custom Search setup.
 
@@ -110,15 +110,15 @@ See `mcp_servers/README.md` for the free Google Custom Search setup.
 collectors ─▶ Rule Engine (harness) ─┬─▶ Alert engine
  (ping/eventlog/wmi/ldap)            └─▶ Ollama brain ─▶ findings
                                                   ▲
-                            IT admin ── chat (JOTARO CLI / TUI) ──┘
+                            IT admin ── chat (CHENG AI CLI / TUI) ──┘
 ```
 The chat layer talks to Ollama and reaches live data through tools. See
 `docs/HARNESS.md` for the harness contract and `docs/architecture.md` for the full flow.
 
 ## Layout
 ```
-jotaro.py            CLI entrypoint (monitor / --workspace / --team / --login)
-jotaro_tui.py        Textual full-screen TUI
+cheng.py            CLI entrypoint (monitor / --workspace / --team / --login)
+cheng_tui.py        Textual full-screen TUI
 ai/                  brain (ReAct loop), auth, fs/excel/shell/web tools, memory,
                      skills, verify, parallel fan-out, specialists, mcp client, adapters
 engine/              rule engine + tunable thresholds

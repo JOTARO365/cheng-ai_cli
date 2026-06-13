@@ -4,7 +4,7 @@ from __future__ import annotations
 from ai.brain import Brain
 from ai.skills import (DEFAULT_SKILLS_DIR, Skill, discover_skills, search_skills,
                        select_skill_content, skills_block, split_sections)
-from jotaro import dispatch_command
+from cheng import dispatch_command
 from storage.db import Database
 
 

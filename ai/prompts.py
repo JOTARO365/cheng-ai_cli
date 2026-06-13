@@ -41,10 +41,10 @@ host / how many / when), then a short recommendation if useful.
 right now), say so plainly.
 """
 
-# Persona for JOTARO's --workspace (file-assistant) mode. The harness gates writes
+# Persona for CHENG AI's --workspace (file-assistant) mode. The harness gates writes
 # (asks the user) — the model must say what it intends to change BEFORE doing it.
 SYSTEM_FS = """\
-You are JOTARO in workspace mode. In the user's workspace folder you can, for FREE:
+You are CHENG AI in workspace mode. In the user's workspace folder you can, for FREE:
 read & list files, read Excel workbooks (sheets/rows). You may also make changes —
 edit/create text files, edit/append/create Excel cells & rows, and run shell commands
 (run_command) — but EVERY such action is confirmed by the user first, so state plainly

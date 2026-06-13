@@ -1,9 +1,9 @@
-# JOTARO CLI vs Claude Code — harness gap analysis
+# CHENG AI CLI vs Claude Code — harness gap analysis
 
-What a real agent harness provides (the "9 things"), and where JOTARO stands today.
+What a real agent harness provides (the "9 things"), and where CHENG AI stands today.
 Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ partial · ✗ missing.
 
-| # | Harness capability | Claude Code | JOTARO | Notes / gap |
+| # | Harness capability | Claude Code | CHENG AI | Notes / gap |
 |---|---|---|---|---|
 | 1 | **Loop / stop condition** | ✅ | ✅ | `max_steps` cap (6). Loop is code-owned (ReAct). |
 | 1b| ↳ tool-error recovery | ✅ | ✅ | **Fixed.** The loop wraps `_execute`: a *raising* tool (buggy MCP/custom) is caught, the error is fed back as a tool message, and the model recovers — the turn no longer crashes. `KeyboardInterrupt`/`SystemExit` still propagate. |
@@ -18,7 +18,7 @@ Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ par
 | 9 | **Safety / sandbox** | ✅ | ✅ | Path-jail on fs tools (traversal/abs/symlink blocked), confirm gate on writes+shell, web opt-out, offline monitor. Shell is confirm-not-sandbox (documented). |
 
 ## Claude Code features beyond the 9
-| Feature | JOTARO | Note |
+| Feature | CHENG AI | Note |
 |---|---|---|
 | Conversation auto-compact | ✅ | see #2 — budget-gated summary fold |
 | Session resume (`--continue`) | ✅ | see #6 — SQLite-backed, `--resume`/`--sessions` |
@@ -33,9 +33,9 @@ Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ par
 | MCP servers | ✅ | sync bridge over the MCP SDK |
 | Streaming output | ✅ | NDJSON token streaming |
 | Memory across sessions | ✅ | SQLite `remember`/`recall` (Claude Code uses CLAUDE.md/memory files) |
-| Username/password auth | ✅ | **JOTARO has this; Claude Code does not** (it's a single-user CLI) |
+| Username/password auth | ✅ | **CHENG AI has this; Claude Code does not** (it's a single-user CLI) |
 
-## What JOTARO already matches or beats
+## What CHENG AI already matches or beats
 - Real code-owned ReAct loop with a hard stop — the thing AutoGPT lacked.
 - Path sandbox + per-write confirmation — solid safety floor.
 - Progressive skill loading + per-skill toggle.
@@ -51,7 +51,7 @@ Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ par
 5. **Diff preview on edit (#5/UX)** — show a real diff in the confirm prompt. *Next.*
 6. **Network retry/backoff (#1c)** — one Ollama failure currently gives up; add bounded retry.
 
-> Verdict: JOTARO is a *genuine* harness (not a chat wrapper) and matches Claude Code on
+> Verdict: CHENG AI is a *genuine* harness (not a chat wrapper) and matches Claude Code on
 > loop/registry/sandbox/permission, and exceeds it on memory + multi-user auth. The
 > real missing modules are **context compaction**, **session resume**, **hook config**,
 > and **tool-error isolation** — see `tests/test_hardcore.py` for the empirical probes

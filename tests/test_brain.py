@@ -1,4 +1,4 @@
-"""Tests for the JOTARO agent loop (ai/brain.py) + tool registry (ai/tools.py).
+"""Tests for the CHENG AI agent loop (ai/brain.py) + tool registry (ai/tools.py).
 
 Fully offline: Ollama's HTTP calls are mocked, so the ReAct loop, tool dispatch,
 and the unavailable-fallback are all exercised on any machine without a model.

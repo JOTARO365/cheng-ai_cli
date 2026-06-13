@@ -1,13 +1,13 @@
-"""JOTARO AI CLI — terminal console for the SME IT Agent (retro, but a working tool).
+"""CHENG AI CLI — terminal console for the SME IT Agent (retro, but a working tool).
 
 A local, offline IT assistant in your terminal: ask in Thai or English, the model
 calls our tools and answers from real data. Same backend as the Open WebUI interface
 (local Ollama + the same SQLite store).
 
 Run:
-  python jotaro.py                      monitor console (read-only IT tools)
-  python jotaro.py --workspace DIR      file assistant (read/edit/write in DIR; writes ask first)
-  python jotaro.py --ask "…"            one-shot, no REPL
+  python cheng.py                      monitor console (read-only IT tools)
+  python cheng.py --workspace DIR      file assistant (read/edit/write in DIR; writes ask first)
+  python cheng.py --ask "…"            one-shot, no REPL
 Commands:  /help   /status   /clear   /exit
 """
 from __future__ import annotations
@@ -172,7 +172,7 @@ def title_screen(model: str, online: bool, n_tools: int, workspace: str | None) 
     status = "[green]● online[/]" if online else "[red]● offline[/]"
     mode = f"workspace · {workspace}" if workspace else "monitor · read-only"
     body = Text.from_markup(
-        f"[{CORAL}]✻[/] [bold]JOTARO[/]  [{MUTED}]· SME IT Agent · local · offline[/]\n\n"
+        f"[{CORAL}]✻[/] [bold]CHENG AI[/]  [{MUTED}]· SME IT Agent · local · offline[/]\n\n"
         f"  [{MUTED}]model[/]   {model}   {status}\n"
         f"  [{MUTED}]mode[/]    {mode}\n"
         f"  [{MUTED}]tools[/]   {n_tools} loaded\n\n"
@@ -364,7 +364,7 @@ def _getpass(label: str) -> str:
 def _bootstrap_admin(auth: Auth) -> User | None:
     """First run: no users exist yet — create the initial admin interactively."""
     console.print(Panel(
-        Text.from_markup(f"[{CORAL}]✻[/] [bold]Welcome to JOTARO[/]\n\n"
+        Text.from_markup(f"[{CORAL}]✻[/] [bold]Welcome to CHENG AI[/]\n\n"
                          f"[{MUTED}]No accounts yet — let's create the first admin.[/]"),
         box=box.ROUNDED, border_style=CORAL, expand=False, padding=(1, 2)))
     try:
@@ -391,7 +391,7 @@ def login_gate(db: Database) -> User | None:
     auth = Auth(db)
     if not auth.has_users():
         return _bootstrap_admin(auth)
-    console.print(f"\n[{CORAL}]✻[/] [bold]JOTARO login[/]  [{MUTED}]· sign in to continue[/]")
+    console.print(f"\n[{CORAL}]✻[/] [bold]CHENG AI login[/]  [{MUTED}]· sign in to continue[/]")
     for _ in range(3):
         try:
             username = console.input(f"  [{MUTED}]username:[/] ").strip()
@@ -462,7 +462,7 @@ def _cmd_users(auth: Auth, user: User, text: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="JOTARO AI CLI — SME IT Agent")
+    parser = argparse.ArgumentParser(description="CHENG AI CLI — SME IT Agent")
     parser.add_argument("--ask", metavar="QUESTION",
                         help="ask one question, print the answer, and exit (no REPL)")
     parser.add_argument("--workspace", metavar="DIR", nargs="?", const=".", default=None,
@@ -541,7 +541,7 @@ def main() -> None:
             else:
                 brain.ask(history, text, on_tool=_on_tool, on_result=_on_result,
                           on_token=_stream_token, on_compact=_on_compact)
-                label = "JOTARO"
+                label = "CHENG AI"
         except OllamaUnavailable as exc:
             _status_clear()
             console.print(f"[bold red]✖ Ollama unreachable:[/bold red] {exc}")
@@ -560,7 +560,7 @@ def main() -> None:
             else:
                 ans = brain.ask(history, text, on_tool=_on_tool, on_result=_on_result,
                                 on_compact=_on_compact)
-                label = "JOTARO"
+                label = "CHENG AI"
                 evidence = "\n".join(m["content"] for m in history
                                      if m.get("role") == "tool")[-3000:]
             _status_show("verifying")
@@ -600,10 +600,10 @@ def main() -> None:
             console.print(f"[bold red]✖ Ollama unreachable:[/bold red] {exc}")
             return
         _status_clear()
-        console.print(Text.assemble(("⏺ ", CORAL), ("JOTARO", MUTED)))
+        console.print(Text.assemble(("⏺ ", CORAL), ("CHENG AI", MUTED)))
         console.print(Markdown(ans or "_(no answer)_"))
         tail = " · [green]web ↗[/green]" if searched else ""
-        console.print(f"[{MUTED}]— {subtitle} · JOTARO[/]{tail}")
+        console.print(f"[{MUTED}]— {subtitle} · CHENG AI[/]{tail}")
 
     if args.ask:
         answer_turn(args.ask, [])

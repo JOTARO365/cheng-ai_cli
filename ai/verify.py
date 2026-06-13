@@ -6,7 +6,7 @@ Two layers, cheap first:
   2. a critic Brain that judges whether the draft is grounded in the tool data.
 
 If either flags the draft, the caller can regenerate once before sending. Used opt-in
-(jotaro --verify) because it costs an extra pass and can't stream.
+(cheng --verify) because it costs an extra pass and can't stream.
 """
 from __future__ import annotations
 

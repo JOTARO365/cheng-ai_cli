@@ -43,7 +43,7 @@ def _run_excel(cfg, model: str) -> None:
     from ai.prompts import SYSTEM_FS
     from eval.excel_cases import EXCEL_CASES, score as xscore, seed_xlsx
 
-    ws = Path(tempfile.gettempdir()) / "jotaro_eval_xlsx"
+    ws = Path(tempfile.gettempdir()) / "cheng_eval_xlsx"
     ws.mkdir(parents=True, exist_ok=True)
     seed_xlsx(str(ws / "staff.xlsx"))
     fs_d, xl_d = make_fs_dispatcher(ws), make_excel_dispatcher(ws)
@@ -77,7 +77,7 @@ def _run_excel(cfg, model: str) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="JOTARO eval — harness lift on a local model")
+    ap = argparse.ArgumentParser(description="CHENG AI eval — harness lift on a local model")
     ap.add_argument("--bare", action="store_true", help="also run the model with NO tools")
     ap.add_argument("--excel", action="store_true", help="run the Excel-specialist eval instead")
     ap.add_argument("--model", help="override OLLAMA_MODEL")
@@ -88,7 +88,7 @@ def main() -> None:
     if args.excel:
         _run_excel(cfg, model)
         return
-    db = Database(Path(tempfile.gettempdir()) / "jotaro_eval.db")
+    db = Database(Path(tempfile.gettempdir()) / "cheng_eval.db")
     seed(db)
 
     harnessed = Brain(cfg.ollama_host, model, db)                       # tools + SYSTEM_CHAT

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ai.brain import Brain
-from jotaro import dispatch_command
+from cheng import dispatch_command
 from storage.db import Database
 
 

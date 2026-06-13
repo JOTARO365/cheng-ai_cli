@@ -1,4 +1,4 @@
-"""Excel (.xlsx) tools for JOTARO's --workspace mode.
+"""Excel (.xlsx) tools for CHENG AI's --workspace mode.
 
 Same shape as ai/fs_tools.py: reads/lists are free, mutations (write cell / append row
 / create) are in EXCEL_WRITE_TOOLS so the harness asks the user to confirm first. All
