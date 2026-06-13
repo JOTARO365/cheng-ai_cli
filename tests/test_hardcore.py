@@ -112,16 +112,17 @@ def test_keyboardinterrupt_is_not_swallowed(db, monkeypatch):
 # ===========================================================================
 # 2. CONTEXT — grows unbounded (the priority gap, pinned)
 # ===========================================================================
-def test_context_has_no_compaction(db, monkeypatch):
-    """GAP (#2): repeated turns accumulate; there is no compaction hook today."""
+def test_compaction_is_budget_gated(db, monkeypatch):
+    """FIXED (#2): small turns stay verbatim (under budget); growth is bounded once
+    history exceeds context_budget. Full compaction behavior: tests/test_compaction.py."""
     _scripted_post(monkeypatch, [{"role": "assistant", "content": "ok"}])
-    b = Brain("http://x", "m", db)
+    b = Brain("http://x", "m", db, context_budget=100_000)
     history = b.new_history()
     before = len(history)
     for i in range(10):
         b.ask(history, f"turn {i}")
-    assert len(history) == before + 20          # 10 * (user + assistant), nothing dropped
-    assert not hasattr(b, "compact")            # no compaction API yet → reminder to add
+    assert len(history) == before + 20          # tiny turns, well under budget → kept
+    assert hasattr(b, "_compact")               # the compaction API now exists
 
 
 # ===========================================================================

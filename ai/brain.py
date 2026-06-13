@@ -28,7 +28,7 @@ import httpx
 from ai.memory_tools import MEMORY_TOOL_SPECS
 from ai.skills import (DEFAULT_SKILLS_DIR, SKILL_TOOL_SPECS, discover_skills,
                        search_skills, select_skill_content, skills_block)
-from ai.prompts import SYSTEM_CHAT
+from ai.prompts import SYSTEM_CHAT, SYSTEM_SUMMARIZER
 from ai.tools import TOOL_SPECS, dispatch as _db_dispatch
 from storage.db import Database
 
@@ -69,6 +69,8 @@ class Brain:
         temperature: float = 0.2,
         skills_dir: Any = DEFAULT_SKILLS_DIR,
         skills_enabled: bool = True,
+        context_budget: int = 16_000,
+        keep_recent_turns: int = 2,
     ) -> None:
         self.host = host.rstrip("/")
         self.model = model
@@ -89,6 +91,10 @@ class Brain:
         self.timeout = timeout
         self.max_steps = max_steps
         self.temperature = temperature
+        # context compaction: fold old turns into a summary when history grows past
+        # context_budget (chars ≈ tokens*4), always keeping the last keep_recent_turns
+        self.context_budget = context_budget
+        self.keep_recent_turns = keep_recent_turns
 
     @classmethod
     def from_config(cls, cfg: Any, db: Database, **kw: Any) -> "Brain":
@@ -160,12 +166,15 @@ class Brain:
         on_tool: Callable[[str, dict[str, Any]], None] | None = None,
         on_result: Callable[[str, Any], None] | None = None,
         on_token: Callable[[str], None] | None = None,
+        on_compact: Callable[[int, int], None] | None = None,
     ) -> str:
         """Run one user turn through the ReAct loop. Mutates `history`, returns the
         model's final answer. on_tool(name,args) fires before a tool runs;
         on_result(name,result) after (⎿ display); on_token(delta) streams the answer
         text token-by-token (when set, the answer is NOT language-guard-regenerated —
-        the caller is expected to strip CJK per token)."""
+        the caller is expected to strip CJK per token); on_compact(before,after) fires
+        when old turns were folded into a summary to stay within the context budget."""
+        self._compact(history, on_compact)
         history.append({"role": "user", "content": question})
         last: dict[str, Any] = {}
         for _ in range(self.max_steps):
@@ -257,6 +266,68 @@ class Brain:
             log.warning("language guard: still leaking after retries — stripping CJK")
             answer = _CJK.sub("", answer).strip()
         return answer
+
+    # ---- context compaction (keep history under budget) ------------------
+    @staticmethod
+    def _msg_chars(m: dict[str, Any]) -> int:
+        n = len(m.get("content") or "")
+        if m.get("tool_calls"):
+            n += len(json.dumps(m["tool_calls"], default=str))
+        return n
+
+    def _history_chars(self, history: list[dict[str, Any]]) -> int:
+        return sum(self._msg_chars(m) for m in history)
+
+    def _recent_tail(self, body: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The last `keep_recent_turns` user turns to the end, starting at a clean
+        boundary (a user message) so no tool result is split from its assistant call."""
+        user_idx = [i for i, m in enumerate(body) if m.get("role") == "user"]
+        if len(user_idx) <= self.keep_recent_turns:
+            return body
+        return body[user_idx[-self.keep_recent_turns]:]
+
+    def _compact(self, history: list[dict[str, Any]],
+                 on_compact: Callable[[int, int], None] | None = None) -> None:
+        """Fold the oldest turns into a one-message summary when history exceeds the
+        budget. Mutates `history` in place (so the caller's reference stays valid),
+        always preserving the system message + the recent tail verbatim."""
+        before = self._history_chars(history)
+        if before <= self.context_budget or len(history) < 2:
+            return
+        system, body = history[0], history[1:]
+        keep = self._recent_tail(body)
+        older = body[:len(body) - len(keep)]
+        if not older:
+            return                                   # the tail alone is already too big
+        summary = self._summarize_history(older)
+        note = {"role": "user",
+                "content": "[earlier conversation — summary]\n" + summary}
+        history[:] = [system, note, *keep]
+        after = self._history_chars(history)
+        log.info("context compaction: %d → %d chars (folded %d msgs)",
+                 before, after, len(older))
+        if on_compact:
+            on_compact(before, after)
+
+    def _summarize_history(self, msgs: list[dict[str, Any]]) -> str:
+        """Summarize old turns, preserving facts/decisions/paths/open tasks. Uses the
+        model; falls back to deterministic truncation if Ollama is unavailable."""
+        transcript = "\n".join(
+            f"{m.get('role', '?')}: {(m.get('content') or '').strip()}"
+            for m in msgs if (m.get("content") or "").strip())
+        try:
+            msg = self._chat([
+                {"role": "system", "content": SYSTEM_SUMMARIZER},
+                {"role": "user", "content":
+                    "Summarize this earlier conversation. Preserve facts, decisions, "
+                    "file paths, names, and open tasks. Be concise:\n\n" + transcript},
+            ], use_tools=False)
+            text = (msg.get("content") or "").strip()
+            if text:
+                return _CJK.sub("", text) if _has_cjk(text) else text
+        except OllamaUnavailable:
+            log.warning("compaction summarizer offline — using truncated transcript")
+        return transcript[-self.context_budget // 2:]   # deterministic fallback
 
     # ---- Ollama call ------------------------------------------------------
     def _chat(self, messages: list[dict[str, Any]], use_tools: bool = True,

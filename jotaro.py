@@ -250,6 +250,11 @@ def _stream_token(delta: str) -> None:
     sys.stdout.flush()
 
 
+def _on_compact(before: int, after: int) -> None:
+    _status_clear()
+    console.print(f"  [{MUTED}]⟳ compacted context {before:,} → {after:,} chars[/]")
+
+
 def _confirm(name: str, args: dict) -> bool:
     if name == "run_command":
         # show the FULL command (never truncated) via Text so any [brackets] aren't
@@ -484,7 +489,7 @@ def main() -> None:
                                     on_token=_stream_token)
             else:
                 brain.ask(history, text, on_tool=_on_tool, on_result=_on_result,
-                          on_token=_stream_token)
+                          on_token=_stream_token, on_compact=_on_compact)
                 label = "JOTARO"
         except OllamaUnavailable as exc:
             _status_clear()
@@ -502,7 +507,8 @@ def main() -> None:
                 label, ans = team.ask(text, on_tool=_on_tool, on_result=_on_result)
                 evidence = ""
             else:
-                ans = brain.ask(history, text, on_tool=_on_tool, on_result=_on_result)
+                ans = brain.ask(history, text, on_tool=_on_tool, on_result=_on_result,
+                                on_compact=_on_compact)
                 label = "JOTARO"
                 evidence = "\n".join(m["content"] for m in history
                                      if m.get("role") == "tool")[-3000:]
@@ -527,7 +533,8 @@ def main() -> None:
         _status_show("thinking")
         searched = False
         try:
-            ans = brain.ask(history, text, on_tool=_on_tool, on_result=_on_result)
+            ans = brain.ask(history, text, on_tool=_on_tool, on_result=_on_result,
+                            on_compact=_on_compact)
             if _no_knowledge(ans):                       # model doesn't know → search ourselves
                 _status_show("searching the web")
                 sr = brain._execute("web_search", {"query": text})  # noqa: SLF001 — deterministic

@@ -41,6 +41,21 @@ Updated  : 2026-06-10
 🔭 Roadmap left: TUI v2 (workspace/team modes, sidebar, streaming-in-log), LLM router,
    cross-specialist memory, fine-tune pipeline design (prod GPU).
 
+---- 2026-06-13 — Context compaction (Claude-Code gap) ----
+✅ ai/brain.py: Brain now self-compacts history. When _history_chars(history) exceeds
+   context_budget (default 16k chars ≈ 4k tok), _compact folds the OLDEST turns into one
+   model-written summary (SYSTEM_SUMMARIZER), always keeping the system msg + last
+   keep_recent_turns (2) user-turns verbatim. _recent_tail starts the kept slice at a
+   user boundary so no tool result is orphaned from its call. on_compact(before,after)
+   callback. Summarizer falls back to deterministic truncation if Ollama is down.
+✅ jotaro.py: _on_compact prints "⟳ compacted N → M chars"; wired into all 3 ask() paths.
+✅ tests/test_compaction.py (6) + updated test_hardcore (#2 gap now FIXED). 186 tests pass.
+✅ LIVE VERIFIED (qwen2.5:3b): forced budget=900 → compaction fired (2011→1885), the
+   model summary preserved "print server=SRV01, Bangkok office", and the next question
+   was answered CORRECTLY from the folded summary ("SRV01 อยู่ในสำนักงานกรุงเทพ"), clean Thai.
+🧱 Ollama models live on D:\ollama-models — serve MUST be started with OLLAMA_MODELS set
+   (export 'OLLAMA_MODELS=D:\ollama-models'; mind shell backslash-stripping) or it sees 0 blobs.
+
 ## (history) CURRENT STATUS
 🟢 In progress : v0.1.0 — collectors + Rule Engine + sandbox + tool server + JOTARO CLI (34 tests)
 
