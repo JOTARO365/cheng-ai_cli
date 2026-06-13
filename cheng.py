@@ -619,6 +619,9 @@ def main() -> None:
                         help="list saved chat sessions and exit")
     parser.add_argument("--no-hooks", action="store_true",
                         help="disable the default safety hooks (e.g. the rm -rf shell guard)")
+    parser.add_argument("--llm-route", action="store_true",
+                        help="with --team: route via a structured-output classifier "
+                             "(falls back to keyword) instead of pure keyword matching")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -637,7 +640,7 @@ def main() -> None:
     from ai.skills import DEFAULT_SKILLS_DIR
     skill_kw = {"skills_dir": args.skills or DEFAULT_SKILLS_DIR,
                 "skills_enabled": not args.no_skills}
-    team = Supervisor(cfg, db, **skill_kw) if args.team else None
+    team = Supervisor(cfg, db, llm_route=args.llm_route, **skill_kw) if args.team else None
     web = bool(args.workspace) and not args.no_web          # workspace is ONLINE by default
     brain = None if team else build_brain(cfg, db, args.workspace, web=web,
                                           mcp_config=args.mcp, **skill_kw)

@@ -5,6 +5,20 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — #2 Structured output (Ollama format=schema → reliable on 3b) ----
+✅ Brain.structured(prompt, schema, system=) → constrained JSON via Ollama `format` (no
+   tools/stream); _parse_json strips fences/extracts {..}; retries then StructuredError.
+   _chat gained fmt= param. The reliable primitive for routing/classify/extract on a small model.
+✅ Applied: Supervisor(llm_route=True) → _route_llm uses structured {"specialist": enum},
+   falls back to keyword on StructuredError/OllamaUnavailable (routing never breaks).
+   Keyword stays DEFAULT (zero LLM calls, offline). cheng --llm-route flag (with --team).
+✅ tests/test_structured.py (8: parser + structured + schema-passed + retry) +
+   test_specialists (3: llm route, fallback, default). 265 tests pass.
+✅ LIVE on qwen2.5:3b: extraction PERFECT ("SRV1 บริการ Print Spooler ล่ม" → host=SRV1,
+   service=Print Spooler, severity=critical); router agrees w/ keyword on clear cases.
+💡 Anthropic/skill: structured/typed output = big reliability win on small models. Next
+   candidate in the "smarter model" layer: #3 model router by difficulty (3b vs coder:7b/14b).
+
 ---- 2026-06-13 — #1 Tool scoping (Anthropic: fewer tools = smarter small model) ----
 ✅ Just-in-time per-turn tool gating in Brain._gate_tools(question): ALWAYS domain tools;
    memory tools (remember/recall) ONLY on a save/recall intent (_MEMORY_INTENT EN+TH);

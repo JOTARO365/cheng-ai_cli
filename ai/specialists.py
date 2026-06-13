@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ai.brain import Brain
+from ai.brain import Brain, OllamaUnavailable, StructuredError
 from ai.prompts import NETWORK_ANALYST, SECURITY_ANALYST, SERVICE_ANALYST, SYSTEM_CHAT
 from ai.tools import TOOL_SPECS
 from storage.db import Database
@@ -59,7 +59,8 @@ SPECIALISTS: list[Specialist] = [
 class Supervisor:
     """Holds one Brain per specialist (+ a generalist) and routes questions."""
 
-    def __init__(self, cfg: Any, db: Database, **brain_kw: Any) -> None:
+    def __init__(self, cfg: Any, db: Database, *, llm_route: bool = False,
+                 **brain_kw: Any) -> None:
         self._brains: dict[str, Brain] = {
             s.name: Brain.from_config(cfg, db, system=s.system, tools=s.tools, **brain_kw)
             for s in SPECIALISTS
@@ -67,6 +68,7 @@ class Supervisor:
         # generalist fallback: full persona + all tools
         self._brains["general"] = Brain.from_config(cfg, db, system=SYSTEM_CHAT, **brain_kw)
         self._db = db
+        self._llm_route = llm_route          # opt-in: structured-output router vs keyword
 
     def set_skills_enabled(self, on: bool) -> bool:
         for b in self._brains.values():
@@ -118,8 +120,16 @@ class Supervisor:
         return list(self._brains.values())
 
     def route(self, question: str) -> str:
-        """Pick a specialist by keyword; 'general' if nothing matches. Deterministic,
-        no LLM call. (Swap this body for an LLM router if you ever need fuzzier intent.)"""
+        """Pick a specialist. Default = deterministic keyword match (zero LLM calls,
+        offline-friendly). With llm_route=True, use a structured-output classifier and
+        fall back to keyword if the model/JSON fails — so routing never breaks."""
+        if self._llm_route:
+            name = self._route_llm(question)
+            if name:
+                return name
+        return self._route_keyword(question)
+
+    def _route_keyword(self, question: str) -> str:
         q = question.lower()
         best, score = "general", 0
         for s in SPECIALISTS:
@@ -127,6 +137,23 @@ class Supervisor:
             if hits > score:
                 best, score = s.name, hits
         return best
+
+    def _route_llm(self, question: str) -> str | None:
+        """Structured-output router: the model returns {"specialist": <enum>}. Returns a
+        valid specialist name, or None to signal 'fall back to keyword'."""
+        names = [s.name for s in SPECIALISTS] + ["general"]
+        schema = {"type": "object",
+                  "properties": {"specialist": {"type": "string", "enum": names}},
+                  "required": ["specialist"]}
+        sysp = ("You route an IT question to the right specialist. "
+                "security = logins/lockouts/brute-force; network = offline PCs/connectivity; "
+                "service = Windows services/alerts/system status; general = anything else. "
+                "Reply with the specialist only.")
+        try:
+            name = self._brains["general"].structured(question, schema, system=sysp).get("specialist")
+            return name if name in self._brains else None
+        except (StructuredError, OllamaUnavailable):
+            return None
 
     def ask(self, question: str, on_tool=None, on_result=None, on_token=None) -> tuple[str, str]:
         """Route, delegate to that specialist's Brain, return (specialist_name, answer).

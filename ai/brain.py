@@ -61,6 +61,30 @@ class OllamaUnavailable(RuntimeError):
     back (e.g. tell IT the AI is offline) rather than crash."""
 
 
+class StructuredError(RuntimeError):
+    """The model didn't return JSON matching the requested schema (after retries)."""
+
+
+def _parse_json(text: str) -> "dict[str, Any] | None":
+    """Best-effort parse of a model's JSON reply: strip ``` fences, else grab the first
+    {...} block. Returns None if nothing parses."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+    try:
+        obj = json.loads(text)
+        return obj if isinstance(obj, dict) else None
+    except (ValueError, TypeError):
+        m = re.search(r"\{.*\}", text, re.S)
+        if m:
+            try:
+                obj = json.loads(m.group(0))
+                return obj if isinstance(obj, dict) else None
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
 # A dispatcher runs a tool by name and returns JSON-ready data.
 Dispatcher = Callable[[str, dict[str, Any]], Any]
 Confirm = Callable[[str, dict[str, Any]], bool]
@@ -268,6 +292,30 @@ class Brain:
             return _CJK.sub("", final).strip() or _EMPTY_FALLBACK
         return self._language_guard(history, final) or _EMPTY_FALLBACK
 
+    # ---- structured output (constrained JSON) ----------------------------
+    def structured(self, prompt: str, schema: dict[str, Any], *,
+                   system: str | None = None, retries: int = 1) -> dict[str, Any]:
+        """Ask for output matching a JSON `schema` using Ollama's constrained decoding
+        (no tools, no streaming). Returns the parsed dict. Far more reliable than parsing
+        free text on a small model — use for routing, classification, and extraction.
+        Raises StructuredError if it still won't produce valid JSON; OllamaUnavailable
+        propagates from the transport."""
+        messages: list[dict[str, Any]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        last = ""
+        for _ in range(retries + 1):
+            msg = self._chat(messages, use_tools=False, fmt=schema)
+            last = (msg.get("content") or "").strip()
+            obj = _parse_json(last)
+            if obj is not None:
+                return obj
+            messages.append(msg)
+            messages.append({"role": "user",
+                             "content": "Return ONLY valid JSON matching the schema — no prose."})
+        raise StructuredError(f"no valid JSON after {retries + 1} tries: {last[:200]!r}")
+
     # ---- tools + permission gate -----------------------------------------
     def _execute(self, name: str, args: dict[str, Any]) -> Any:
         """Run a tool through the hook chain: pre-hooks (deny/modify) → the tool →
@@ -403,7 +451,8 @@ class Brain:
     # ---- Ollama call ------------------------------------------------------
     def _chat(self, messages: list[dict[str, Any]], use_tools: bool = True,
               on_token: Callable[[str], None] | None = None,
-              tools: "list[dict[str, Any]] | None" = None) -> dict[str, Any]:
+              tools: "list[dict[str, Any]] | None" = None,
+              fmt: Any = None) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -412,6 +461,8 @@ class Brain:
         }
         if use_tools:
             payload["tools"] = tools if tools is not None else self.tools
+        if fmt is not None:
+            payload["format"] = fmt          # Ollama: "json" or a JSON-schema dict → constrained output
 
         if on_token is None:
             attempt = 0

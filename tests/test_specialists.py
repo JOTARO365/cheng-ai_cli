@@ -45,3 +45,29 @@ def test_supervisor_builds_a_brain_per_specialist(sup: Supervisor) -> None:
     names = set(sup._brains)  # noqa: SLF001 (test)
     assert {"security", "network", "service", "general"} <= names
     assert sup.tool_count() == 5
+
+
+# --- LLM router (structured output) + keyword fallback (gap #2 application) ---
+def test_llm_router_uses_structured_output(monkeypatch, tmp_path):
+    import ai.specialists as sp
+    s = Supervisor(_Cfg(), Database(tmp_path / "t.db"), llm_route=True)
+    monkeypatch.setattr(sp.Brain, "structured",
+                        lambda self, q, schema, **k: {"specialist": "security"})
+    assert s.route("anything at all") == "security"
+
+
+def test_llm_router_falls_back_to_keyword_on_failure(monkeypatch, tmp_path):
+    import ai.specialists as sp
+    s = Supervisor(_Cfg(), Database(tmp_path / "t.db"), llm_route=True)
+
+    def boom(self, q, schema, **k):
+        raise sp.StructuredError("bad json")
+
+    monkeypatch.setattr(sp.Brain, "structured", boom)
+    # structured router failed → keyword routing still picks network for an offline q
+    assert s.route("which PC is offline?") == "network"
+
+
+def test_keyword_router_is_default(tmp_path):
+    s = Supervisor(_Cfg(), Database(tmp_path / "t.db"))      # llm_route off
+    assert not s._llm_route
