@@ -17,9 +17,23 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:  # reuse the query/result tuning from the main package
+    from ai.web_tools import _clean_query, _filter_results, _region
+except Exception:  # keep the server usable even if run outside the project
+    def _clean_query(q):
+        return q
+
+    def _region(q):
+        return "wt-wt"
+
+    def _filter_results(rows, n):
+        return rows[:n]
 
 mcp = FastMCP("jotaro-search")
 _UA = {"User-Agent": "Mozilla/5.0 (JOTARO)"}
@@ -60,7 +74,7 @@ def _ddg(query: str, n: int) -> list[dict]:
     from ddgs import DDGS
     with DDGS() as d:
         # google/bing backends are far cleaner than "auto"
-        rows = d.text(query, max_results=n, safesearch="moderate",
+        rows = d.text(query, max_results=n, region=_region(query), safesearch="moderate",
                       backend="google, bing, duckduckgo")
         return [{"title": r.get("title"), "url": r.get("href"), "snippet": r.get("body")}
                 for r in rows]
@@ -85,7 +99,8 @@ def search(query: str, n: int = 5) -> dict:
     fn = {"google": _google_cse, "searxng": _searxng,
           "google_scrape": _google_scrape, "ddg": _ddg}[backend]
     try:
-        return {"backend": backend, "query": query, "results": fn(query, n)}
+        rows = fn(_clean_query(query), n * 2)            # over-fetch, then filter junk/dupes
+        return {"backend": backend, "query": query, "results": _filter_results(rows, n)}
     except Exception as exc:  # noqa: BLE001
         return {"backend": backend, "query": query, "error": str(exc), "results": []}
 
