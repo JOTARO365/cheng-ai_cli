@@ -208,7 +208,18 @@ def make_fs_dispatcher(base_dir: str | Path) -> Callable[[str, dict[str, Any]], 
                 text = p.read_text(encoding="utf-8")
                 count = text.count(old)
                 if count == 0:
-                    return {"error": "old_string not found in file"}
+                    # steer the model to recover (Anthropic: errors should guide, not
+                    # just report) — point it at read_file + the likely whitespace cause
+                    lines = text.splitlines()
+                    first = next((ln.strip() for ln in old.splitlines() if ln.strip()), "")
+                    hint = ""
+                    if first and any(first in ln for ln in lines):
+                        hint = (f" Note: {first!r} IS in the file, so old_string only differs "
+                                "by whitespace/indentation — copy it exactly.")
+                    return {"error":
+                            f"old_string not found. read_file '{args.get('path')}' first and "
+                            f"copy the exact text including indentation (file has {len(lines)} "
+                            f"lines).{hint}"}
                 p.write_text(text.replace(old, new), encoding="utf-8")
                 log.warning("fs WRITE edit_file %s (%d replacements)", p, count)
                 return {"status": "edited", "path": str(p.relative_to(base)), "replacements": count}
@@ -258,7 +269,8 @@ def make_fs_dispatcher(base_dir: str | Path) -> Callable[[str, dict[str, Any]], 
         except PathEscape as exc:
             return {"error": str(exc)}
         except FileNotFoundError:
-            return {"error": "file or directory not found"}
+            return {"error": f"'{args.get('path')}' not found — call list_dir to see what "
+                             "exists in the workspace, then use the exact name."}
         except OSError as exc:
             return {"error": f"os error: {exc}"}
 

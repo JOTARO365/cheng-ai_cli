@@ -5,12 +5,25 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — Polish: steering error messages + few-shot (Anthropic refinements) ----
+✅ ai/fs_tools.py: edit_file "old_string not found" → now STEERS: "read_file '<path>' first
+   and copy exact text incl. indentation (file has N lines)" + whitespace-hint when the
+   first line IS present (differs only by indentation). FileNotFoundError → "call list_dir
+   to see what exists." (Anthropic "Writing tools": errors should guide recovery, not just
+   report. excel_tools already steered — "available headers: [...]".)
+✅ ai/prompts.py SYSTEM_CHAT: + "after a tool returns, ALWAYS compose a final answer" +
+   3 compact EXAMPLES (pattern not data) — few-shot the 3b on the call-tool→answer flow
+   (the skill's gotcha: small models stop after a tool call). Prompt still 1.8KB.
+✅ tests/test_fs_tools.py +2 (edit steer, missing-file steer). 275 tests pass.
+💡 "make model smarter" layer now: #1 tool scoping, #2 structured output, #3 model router,
+   + steering errors + few-shot. All grounded in Anthropic "Building/Writing tools for agents".
+
 ---- 2026-06-13 — #3 Model router by difficulty (easy→3b, hard→coder/14b) ----
 ✅ ai/router.py ModelRouter(classifier, easy_model, hard_model, use_llm=False): pick(q) →
    (model, difficulty). Routes UP only when the hard model is actually pulled (_hard_ok
    cached); fails safe to easy. config OLLAMA_MODEL_HARD (default = OLLAMA_MODEL → no-op).
    cheng --auto-model (non-team): per-turn brain.model swap + "↗ hard turn → <model>" note.
-✅ tests/test_router.py (8) + config field. 279 tests pass.
+✅ tests/test_router.py (8) + config field. 273 tests pass.
 🐞 HONEST FINDING (live): the 3b is UNRELIABLE at self-classifying difficulty — it labelled
    even "PC ไหนปิดอยู่บ้าง" as hard (same meta-task weakness as the specialist-router/excel
    findings). FIX: made a DETERMINISTIC heuristic the DEFAULT (coding/planning/explain-step

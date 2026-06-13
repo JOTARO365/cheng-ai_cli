@@ -102,3 +102,22 @@ def test_gate_approved_writes(ws, monkeypatch):
               confirm_tools=WRITE_TOOLS, confirm=lambda n, a: True)
     b.ask(b.new_history(), "write hi to x.txt")
     assert (ws / "x.txt").read_text(encoding="utf-8") == "hi"
+
+
+# --- steering error messages (Anthropic: errors should guide recovery) -------
+def test_edit_error_steers_to_read_file(tmp_path):
+    from ai.fs_tools import make_fs_dispatcher
+    (tmp_path / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    d = make_fs_dispatcher(tmp_path)
+    # old_string doesn't match (content differs) but its first line IS in the file
+    out = d("edit_file", {"path": "a.py", "old_string": "def f():\n    return 2",
+                          "new_string": "x"})
+    assert "read_file" in out["error"]                       # steered to recover
+    assert "whitespace" in out["error"] or "indentation" in out["error"]   # hint fired
+
+
+def test_missing_file_error_steers_to_list_dir(tmp_path):
+    from ai.fs_tools import make_fs_dispatcher
+    d = make_fs_dispatcher(tmp_path)
+    out = d("read_file", {"path": "ghost.txt"})
+    assert "list_dir" in out["error"]
