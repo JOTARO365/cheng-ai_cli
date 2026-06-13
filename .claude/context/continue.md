@@ -41,6 +41,21 @@ Updated  : 2026-06-10
 🔭 Roadmap left: TUI v2 (workspace/team modes, sidebar, streaming-in-log), LLM router,
    cross-specialist memory, fine-tune pipeline design (prod GPU).
 
+---- 2026-06-13 — Configurable pre/post-tool hooks (Claude-Code gap #8) ----
+✅ ai/hooks.py: HookRegistry (pre = ALLOW/DENY/MODIFY, post = rewrite result), matched
+   by tool-name glob ('*', exact, fnmatch). deny short-circuits, modify chains. Built-in
+   dangerous_shell_guard blocks rm -rf / mkfs / dd of=/dev / del /s / Remove-Item -Recurse
+   / shutdown / fork-bomb. default_safe_hooks() = pre run_command guard.
+✅ ai/brain.py: hooks= param; _execute now wraps _execute_inner with run_pre (deny →
+   {"status":"blocked by hook"} fed back to model; modify → swap args) + run_post. No
+   hooks = pass-through. Every tool call (model-driven or internal) passes the chain.
+✅ jotaro.py: default_safe_hooks attached unless --no-hooks; /hooks lists active guards.
+✅ tests/test_hooks.py (24): registry semantics, glob scoping, guard block/allow table,
+   Brain block/modify/post/passthrough. 217 tests pass.
+✅ LIVE VERIFIED: build_brain workspace + default hooks → "rm -rf /" and "Remove-Item
+   -Recurse" hard-blocked before the shell dispatcher; /hooks shows the guard.
+📌 GAP doc: #8 DONE. Remaining ranked: #5 edit diff-preview, #1c Ollama retry/backoff.
+
 ---- 2026-06-13 — Session persistence / resume (Claude-Code gap #6) ----
 ✅ storage/db.py: sessions table (id, created/updated_at, label, history JSON) +
    save_session (upsert, label sticky, microsecond updated_at so re-save = latest),

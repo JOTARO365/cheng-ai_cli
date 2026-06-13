@@ -71,6 +71,7 @@ class Brain:
         skills_enabled: bool = True,
         context_budget: int = 16_000,
         keep_recent_turns: int = 2,
+        hooks: Any = None,
     ) -> None:
         self.host = host.rstrip("/")
         self.model = model
@@ -95,6 +96,9 @@ class Brain:
         # context_budget (chars ≈ tokens*4), always keeping the last keep_recent_turns
         self.context_budget = context_budget
         self.keep_recent_turns = keep_recent_turns
+        # pre/post-tool hooks (guard points): a HookRegistry or None. Every tool call
+        # in _execute passes through it — a pre-hook can deny/modify, a post-hook rewrite.
+        self.hooks = hooks
 
     @classmethod
     def from_config(cls, cfg: Any, db: Database, **kw: Any) -> "Brain":
@@ -215,6 +219,22 @@ class Brain:
 
     # ---- tools + permission gate -----------------------------------------
     def _execute(self, name: str, args: dict[str, Any]) -> Any:
+        """Run a tool through the hook chain: pre-hooks (deny/modify) → the tool →
+        post-hooks (rewrite result). With no hooks attached this is a pass-through."""
+        if self.hooks is not None:
+            dec = self.hooks.run_pre(name, args)
+            if dec.action == "deny":
+                log.info("hook blocked %s: %s", name, dec.reason)
+                return {"status": "blocked by hook", "reason": dec.reason}
+            if dec.action == "modify" and dec.args is not None:
+                log.info("hook modified args for %s", name)
+                args = dec.args
+        result = self._execute_inner(name, args)
+        if self.hooks is not None:
+            result = self.hooks.run_post(name, args, result)
+        return result
+
+    def _execute_inner(self, name: str, args: dict[str, Any]) -> Any:
         if name == "remember":
             text = str(args.get("text", "")).strip()
             if not text:

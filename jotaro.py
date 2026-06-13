@@ -44,6 +44,7 @@ from ai.auth import Auth, AuthError, User
 from ai.brain import Brain, OllamaUnavailable, _CJK
 from ai.excel_tools import EXCEL_TOOL_SPECS, EXCEL_WRITE_TOOLS, make_excel_dispatcher
 from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, make_fs_dispatcher
+from ai.hooks import default_safe_hooks
 from ai.shell_tools import SHELL_TOOL_SPECS, SHELL_WRITE_TOOLS, make_shell_dispatcher
 from ai.parallel import fan_out_summarize
 from ai.prompts import SYSTEM_FS, SYSTEM_SUMMARIZER
@@ -68,6 +69,7 @@ HELP = f"""\
   [bold]/skills[/]   list skills · /skills on|off · /skills <dir> (load local, e.g. ~/.claude)
   [bold]/summarize[/] fan-out summarize a big file (chunk → sub-agents → merge)
   [bold]/sessions[/] list saved sessions  [{MUTED}](resume with --resume <id> / --continue)[/]
+  [bold]/hooks[/]    list active safety hooks       [{MUTED}](--no-hooks to disable)[/]
   [bold]/whoami[/]   show the signed-in user        [{MUTED}](--login)[/]
   [bold]/passwd[/]   change your password           [{MUTED}](--login)[/]
   [bold]/users[/]    manage users (admin): /users · add · passwd · del
@@ -116,6 +118,8 @@ def dispatch_command(text: str) -> str:
         return "users"
     if c == "/sessions" or c.startswith("/sessions "):
         return "sessions"
+    if c == "/hooks":
+        return "hooks"
     return "ask"
 
 
@@ -128,6 +132,7 @@ SLASH_CMDS = [
     ("/skills", "list · on|off · load a dir"),
     ("/summarize", "fan-out summarize a file"),
     ("/sessions", "list saved sessions"),
+    ("/hooks", "list active safety hooks"),
     ("/whoami", "show the signed-in user"),
     ("/passwd", "change your password"),
     ("/users", "manage users (admin)"),
@@ -484,6 +489,8 @@ def main() -> None:
                         help="resume a specific chat session by id (see --sessions)")
     parser.add_argument("--sessions", action="store_true",
                         help="list saved chat sessions and exit")
+    parser.add_argument("--no-hooks", action="store_true",
+                        help="disable the default safety hooks (e.g. the rm -rf shell guard)")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -506,6 +513,8 @@ def main() -> None:
     web = bool(args.workspace) and not args.no_web          # workspace is ONLINE by default
     brain = None if team else build_brain(cfg, db, args.workspace, web=web,
                                           mcp_config=args.mcp, **skill_kw)
+    if brain is not None and not args.no_hooks:
+        brain.hooks = default_safe_hooks()              # gap #8: block rm -rf etc. by default
     verifier = Verifier(cfg, db) if args.verify else None
     web_enabled = web and brain is not None                 # auto web-search fallback on
     subtitle = ("team · security / network / service" if team
@@ -743,6 +752,17 @@ def main() -> None:
             continue
         if action == "sessions":
             print_sessions(db)
+            continue
+        if action == "hooks":
+            hk = getattr(brain, "hooks", None) if not team else None
+            rows = hk.describe() if hk else []
+            if not rows:
+                console.print(f"  [{MUTED}](no hooks active"
+                              f"{' — team mode' if team else ' — started with --no-hooks'})[/]")
+            else:
+                console.print(f"[{CORAL}]active hooks[/] [{MUTED}](guard points around tool calls)[/]")
+                for r in rows:
+                    console.print(f"  [{MUTED}]{r}[/]")
             continue
         if action == "clear":
             history = [] if team else brain.new_history()
