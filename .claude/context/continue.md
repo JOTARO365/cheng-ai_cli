@@ -5,6 +5,19 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — Diff preview on edit/write (Claude-Code gap #5) ----
+✅ ai/fs_tools.py: diff_for(base, name, args) → unified diff a write/edit WOULD make
+   (pure: reads, never writes; path-jail applies; flags missing old_string / new file).
+   + _unified() helper (difflib).
+✅ cheng.py: _confirm → make_confirm(base) factory; for edit_file/write_file it prints a
+   colored unified diff (_render_diff: green +, red -, cyan @@, capped 80 lines) before
+   the y/N prompt. run_command + other writes unchanged. build_brain wires make_confirm(base).
+✅ tests/test_diff_preview.py (8): edit -/+, missing old_string, missing file, no-change,
+   new file label, overwrite, path-escape→None, non-preview tool→None. 225 tests pass.
+✅ VISUAL VERIFIED: edit shows git-style -PORT=8000/+PORT=9090 with context; new file shows
+   @@ -0,0 +1,3 @@ + lines; bad old_string shows a ⚠ warning instead of a misleading diff.
+📌 GAP doc: #5 DONE. Remaining ranked: #1c Ollama retry/backoff.
+
 ---- 2026-06-13 — REBRAND: JOTARO → CHENG AI ----
 ✅ Product renamed JOTARO → "CHENG AI" everywhere. Files: jotaro.py→cheng.py,
    jotaro_tui.py→cheng_tui.py, bin/jotaro-*.cmd→bin/cheng-*.cmd (git mv, history kept).

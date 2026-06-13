@@ -24,7 +24,7 @@ Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ par
 | Session resume (`--continue`) | ✅ | see #6 — SQLite-backed, `--resume`/`--sessions` |
 | Configurable hooks | ✅ | see #8 — pre/post-tool guard registry + built-in shell guard |
 | TodoWrite / task tracking | ✗ | no in-agent task list |
-| Diff preview before edit | ◑ | `edit_file` confirms y/N but shows args, not a colored diff |
+| Diff preview before edit | ✅ | **Fixed** (2026-06-13). The confirm prompt for `edit_file`/`write_file` shows a colored unified diff (`ai/fs_tools.diff_for` + `_render_diff`); warns when `old_string` won't match. `tests/test_diff_preview.py` |
 | `@file` mentions | ✗ | model reads files via `read_file` tool instead |
 | Custom slash commands | ✗ | slash set is fixed in code |
 | Plan mode | ✗ | — |
@@ -48,8 +48,8 @@ Scored against Claude Code as the reference harness. Legend: ✅ have · ◑ par
 2. ~~Tool-error isolation in the loop (#1b)~~ — **DONE** (2026-06-13): loop catches a raising tool and feeds the error back. See `tests/test_hardcore.py::test_tool_exception_is_isolated`.
 3. ~~Session persistence / resume (#6)~~ — **DONE** (2026-06-13): SQLite `sessions` table + `--continue`/`--resume`/`--sessions`. `tests/test_sessions.py`.
 4. ~~Configurable hooks (#8)~~ — **DONE** (2026-06-13): pre/post-tool registry + built-in `rm -rf` shell guard. `tests/test_hooks.py`.
-5. **Diff preview on edit (#5/UX)** — show a real diff in the confirm prompt. *Next.*
-6. **Network retry/backoff (#1c)** — one Ollama failure currently gives up; add bounded retry.
+5. ~~Diff preview on edit (#5/UX)~~ — **DONE** (2026-06-13): colored unified diff in the confirm prompt. `tests/test_diff_preview.py`.
+6. **Network retry/backoff (#1c)** — one Ollama failure currently gives up; add bounded retry. *Next.*
 
 > Verdict: CHENG AI is a *genuine* harness (not a chat wrapper) and matches Claude Code on
 > loop/registry/sandbox/permission, and exceeds it on memory + multi-user auth. The

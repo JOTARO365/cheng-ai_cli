@@ -43,7 +43,7 @@ from prompt_toolkit.history import InMemoryHistory
 from ai.auth import Auth, AuthError, User
 from ai.brain import Brain, OllamaUnavailable, _CJK
 from ai.excel_tools import EXCEL_TOOL_SPECS, EXCEL_WRITE_TOOLS, make_excel_dispatcher
-from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, make_fs_dispatcher
+from ai.fs_tools import FS_TOOL_SPECS, WRITE_TOOLS, diff_for, make_fs_dispatcher
 from ai.hooks import default_safe_hooks
 from ai.shell_tools import SHELL_TOOL_SPECS, SHELL_WRITE_TOOLS, make_shell_dispatcher
 from ai.parallel import fan_out_summarize
@@ -292,17 +292,48 @@ def _on_compact(before: int, after: int) -> None:
     console.print(f"  [{MUTED}]⟳ compacted context {before:,} → {after:,} chars[/]")
 
 
-def _confirm(name: str, args: dict) -> bool:
-    if name == "run_command":
-        # show the FULL command (never truncated) via Text so any [brackets] aren't
-        # parsed as markup — the user must see exactly what will run.
-        console.print(Text.assemble(("⏺ ", CORAL), ("run_command  ", "bold"),
-                                    (str(args.get("command", "")), "yellow")))
-    else:
-        arg_s = ", ".join(f"{k}={_short(v)}" for k, v in args.items())
-        console.print(Text.assemble(("⏺ ", CORAL), (name, "bold"), (f"({arg_s})", MUTED)))
-    ans = console.input(f"  [{MUTED}]⎿  proceed? \\[y/N][/] ")
-    return ans.strip().lower() in ("y", "yes")
+def _render_diff(diff_text: str, max_lines: int = 80) -> None:
+    """Print a unified diff with +/- coloring (Claude-Code-style edit preview)."""
+    out = Text()
+    lines = diff_text.splitlines()
+    for line in lines[:max_lines]:
+        if line.startswith(("+++", "---")):
+            style = MUTED
+        elif line.startswith("@@"):
+            style = "cyan"
+        elif line.startswith("+"):
+            style = "green"
+        elif line.startswith("-"):
+            style = "red"
+        else:
+            style = MUTED
+        out.append("    " + line + "\n", style=style)
+    if len(lines) > max_lines:
+        out.append(f"    … {len(lines) - max_lines} more line(s)\n", style=MUTED)
+    console.print(out, end="")
+
+
+def make_confirm(base) -> "Callable[[str, dict], bool]":
+    """A confirm callback bound to a workspace root so it can show a real diff before
+    edit_file / write_file. Other write tools (shell, excel, mkdir) show their args."""
+    def confirm(name: str, args: dict) -> bool:
+        if name == "run_command":
+            # show the FULL command (never truncated) via Text so any [brackets] aren't
+            # parsed as markup — the user must see exactly what will run.
+            console.print(Text.assemble(("⏺ ", CORAL), ("run_command  ", "bold"),
+                                        (str(args.get("command", "")), "yellow")))
+        elif name in ("edit_file", "write_file"):
+            console.print(Text.assemble(("⏺ ", CORAL), (name + "  ", "bold"),
+                                        (str(args.get("path", "")), "yellow")))
+            diff = diff_for(base, name, args)
+            if diff:
+                _render_diff(diff)
+        else:
+            arg_s = ", ".join(f"{k}={_short(v)}" for k, v in args.items())
+            console.print(Text.assemble(("⏺ ", CORAL), (name, "bold"), (f"({arg_s})", MUTED)))
+        ans = console.input(f"  [{MUTED}]⎿  proceed? \\[y/N][/] ")
+        return ans.strip().lower() in ("y", "yes")
+    return confirm
 
 
 def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
@@ -349,7 +380,7 @@ def build_brain(cfg, db: Database, workspace: str | None, web: bool = False,
     return Brain.from_config(
         cfg, db, system=system, tools=tools, dispatcher=dispatcher,
         confirm_tools=WRITE_TOOLS | EXCEL_WRITE_TOOLS | SHELL_WRITE_TOOLS,
-        confirm=_confirm, **skill_kw,
+        confirm=make_confirm(base), **skill_kw,
     )
 
 

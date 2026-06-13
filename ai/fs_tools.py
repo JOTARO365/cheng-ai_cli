@@ -10,6 +10,7 @@ Reads/lists are free; writes/edits/mkdir are gated + audit-logged.
 """
 from __future__ import annotations
 
+import difflib
 import logging
 from pathlib import Path
 from typing import Any, Callable
@@ -129,6 +130,46 @@ def _safe(base: Path, rel: str) -> Path:
     if p != base and base not in p.parents:
         raise PathEscape(f"path escapes workspace: {rel!r}")
     return p
+
+
+def _unified(before: str, after: str, label: str, n: int = 3) -> str:
+    """A git-style unified diff between two texts (empty string if identical)."""
+    lines = list(difflib.unified_diff(
+        before.splitlines(), after.splitlines(),
+        fromfile=f"a/{label}", tofile=f"b/{label}", lineterm="", n=n))
+    return "\n".join(lines)
+
+
+def diff_for(base_dir: str | Path, name: str, args: dict[str, Any]) -> str | None:
+    """The change a write/edit tool WOULD make, as a unified-diff string — for a
+    confirm-time preview. Returns None when there's nothing meaningful to preview
+    (non-edit tool, path escape, unreadable file). Pure: reads, never writes."""
+    args = args or {}
+    try:
+        base = Path(base_dir).resolve()
+        if name == "edit_file":
+            p = _safe(base, str(args.get("path", "")))
+            old, new = str(args.get("old_string", "")), str(args.get("new_string", ""))
+            if not p.exists():
+                return f"⚠ file not found: {args.get('path')!r} — edit will fail"
+            text = p.read_text(encoding="utf-8", errors="replace")
+            if old and text.count(old) == 0:
+                return "⚠ old_string not found — edit will fail (no change)"
+            rel = str(p.relative_to(base))
+            return _unified(text, text.replace(old, new), rel) or "(no change)"
+        if name == "write_file":
+            p = _safe(base, str(args.get("path", "")))
+            content = str(args.get("content", ""))
+            exists = p.exists()
+            cur = p.read_text(encoding="utf-8", errors="replace") if exists else ""
+            rel = str(p.relative_to(base)) if exists else str(args.get("path", ""))
+            body = _unified(cur, content, rel)
+            if not exists:
+                return f"(new file: {rel}, {len(content.splitlines())} line(s))\n" + body
+            return body or "(no change)"
+    except (PathEscape, OSError, ValueError):
+        return None
+    return None
 
 
 def make_fs_dispatcher(base_dir: str | Path) -> Callable[[str, dict[str, Any]], Any]:
