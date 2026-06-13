@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any, Callable
 
 import httpx
@@ -72,6 +73,8 @@ class Brain:
         context_budget: int = 16_000,
         keep_recent_turns: int = 2,
         hooks: Any = None,
+        retries: int = 2,
+        backoff: float = 0.5,
     ) -> None:
         self.host = host.rstrip("/")
         self.model = model
@@ -99,6 +102,11 @@ class Brain:
         # pre/post-tool hooks (guard points): a HookRegistry or None. Every tool call
         # in _execute passes through it — a pre-hook can deny/modify, a post-hook rewrite.
         self.hooks = hooks
+        # transient-failure retry: a flaky/just-starting Ollama (connection reset, model
+        # still loading → 5xx, timeout) is retried up to `retries` times with exponential
+        # backoff. Permanent errors (4xx) and a non-empty partial stream are NOT retried.
+        self.retries = retries
+        self.backoff = backoff
 
     @classmethod
     def from_config(cls, cfg: Any, db: Database, **kw: Any) -> "Brain":
@@ -362,42 +370,73 @@ class Brain:
             payload["tools"] = self.tools
 
         if on_token is None:
-            try:
-                r = httpx.post(f"{self.host}/api/chat", json=payload, timeout=self.timeout)
-                r.raise_for_status()
-            except httpx.HTTPError as exc:
-                raise OllamaUnavailable(str(exc)) from exc
-            msg = r.json().get("message")
-            if not isinstance(msg, dict):
-                raise OllamaUnavailable("unexpected response from Ollama (no message)")
-            return msg
-
-        # streaming: Ollama returns NDJSON; accumulate content + tool_calls, emit deltas
-        content: list[str] = []
-        tool_calls = None
-        try:
-            with httpx.stream("POST", f"{self.host}/api/chat", json=payload,
-                              timeout=self.timeout) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if not line:
+            attempt = 0
+            while True:
+                try:
+                    r = httpx.post(f"{self.host}/api/chat", json=payload, timeout=self.timeout)
+                    r.raise_for_status()
+                    msg = r.json().get("message")
+                    if not isinstance(msg, dict):
+                        raise OllamaUnavailable("unexpected response from Ollama (no message)")
+                    return msg
+                except httpx.HTTPError as exc:
+                    if self._retry_wait(exc, attempt):
+                        attempt += 1
                         continue
-                    obj = json.loads(line)
-                    m = obj.get("message") or {}
-                    delta = m.get("content") or ""
-                    if delta:
-                        content.append(delta)
-                        on_token(delta)
-                    if m.get("tool_calls"):
-                        tool_calls = m["tool_calls"]
-                    if obj.get("done"):
-                        break
-        except httpx.HTTPError as exc:
-            raise OllamaUnavailable(str(exc)) from exc
+                    raise OllamaUnavailable(str(exc)) from exc
+
+        # streaming: Ollama returns NDJSON; accumulate content + tool_calls, emit deltas.
+        # Retry only while nothing has been emitted yet — we can't un-stream tokens.
+        attempt = 0
+        while True:
+            content: list[str] = []
+            tool_calls = None
+            try:
+                with httpx.stream("POST", f"{self.host}/api/chat", json=payload,
+                                  timeout=self.timeout) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines():
+                        if not line:
+                            continue
+                        obj = json.loads(line)
+                        m = obj.get("message") or {}
+                        delta = m.get("content") or ""
+                        if delta:
+                            content.append(delta)
+                            on_token(delta)
+                        if m.get("tool_calls"):
+                            tool_calls = m["tool_calls"]
+                        if obj.get("done"):
+                            break
+                break
+            except httpx.HTTPError as exc:
+                if not content and self._retry_wait(exc, attempt):
+                    attempt += 1
+                    continue
+                raise OllamaUnavailable(str(exc)) from exc
         msg: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
         if tool_calls:
             msg["tool_calls"] = tool_calls
         return msg
+
+    @staticmethod
+    def _is_transient(exc: httpx.HTTPError) -> bool:
+        """A retryable failure: connection/timeout/protocol errors, or a 5xx (model
+        still loading, server busy). 4xx is a permanent request error — don't retry."""
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code >= 500
+        return isinstance(exc, httpx.TransportError)
+
+    def _retry_wait(self, exc: httpx.HTTPError, attempt: int) -> bool:
+        """Sleep with exponential backoff and return True if the caller should retry;
+        False once attempts are exhausted or the error is permanent."""
+        if attempt >= self.retries or not self._is_transient(exc):
+            return False
+        delay = self.backoff * (2 ** attempt)
+        log.warning("Ollama call failed (%s); retry %d/%d in %.1fs",
+                    exc, attempt + 1, self.retries, delay)
+        time.sleep(delay)
+        return True
 
 
 def _tool_msg(name: str, result: Any) -> dict[str, Any]:

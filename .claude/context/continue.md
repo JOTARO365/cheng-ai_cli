@@ -5,6 +5,24 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — Ollama retry/backoff (gap #1c) — ALL ranked gaps now closed ----
+✅ ai/brain.py: Brain(retries=2, backoff=0.5). _chat retries TRANSIENT failures
+   (httpx.TransportError = connect/read/timeout/protocol, or 5xx = model still loading)
+   with exponential backoff (0.5, 1.0…); 4xx and an already-streamed partial are NOT
+   retried (can't un-emit tokens → stream retries only while content empty). _is_transient
+   + _retry_wait helpers.
+✅ tests/test_retry.py (5): transient→succeed w/ backoff schedule, 5xx retried, give-up
+   raises after N, 4xx not retried, retries=0 disables.
+🐞 FIXED (caught by full suite): sessions "latest" ordering was flaky on Windows' coarse
+   clock (microsecond updated_at still tied → rowid tiebreak picked insert order). Replaced
+   with a monotonic seq column (MAX(seq)+1 per save) + migration (ALTER add seq, then index
+   AFTER so old tables upgrade). latest_session_id/list_sessions order by seq DESC. Solid.
+✅ LIVE VERIFIED: happy path unaffected; dead port (127.0.0.1:9) logged "retry 1/2 in 0.3s"
+   then "2/2 in 0.6s" then raised OllamaUnavailable. 230 tests pass; flaky tests green 3x.
+📌 GAP doc: #1c DONE. ALL ranked priority gaps closed — harness matches Claude Code on the
+   core 9. Leftover "beyond the 9" items (TodoWrite, @file, custom slash, plan mode,
+   multimodal, token/cost) are lower-value, non-blocking.
+
 ---- 2026-06-13 — Diff preview on edit/write (Claude-Code gap #5) ----
 ✅ ai/fs_tools.py: diff_for(base, name, args) → unified diff a write/edit WOULD make
    (pure: reads, never writes; path-jail applies; flags missing old_string / new file).

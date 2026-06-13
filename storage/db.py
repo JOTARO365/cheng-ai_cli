@@ -66,9 +66,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
     label       TEXT,                       -- first user message (shown when listing)
-    history     TEXT NOT NULL               -- JSON array of chat messages
+    history     TEXT NOT NULL,              -- JSON array of chat messages
+    seq         INTEGER NOT NULL DEFAULT 0  -- monotonic save counter (drives "latest")
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at);
 
 CREATE TABLE IF NOT EXISTS users (
     username      TEXT PRIMARY KEY,
@@ -120,6 +120,12 @@ class Database:
     def init_schema(self) -> None:
         with self._conn() as conn:
             conn.executescript(SCHEMA)
+            # migration: add sessions.seq to DBs created before it existed, THEN index it
+            # (the index must come after the column exists for older tables to upgrade).
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
+            if "seq" not in cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN seq INTEGER NOT NULL DEFAULT 0")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_seq ON sessions(seq)")
 
     # ---- nodes -----------------------------------------------------------
     def get_node(self, host: str) -> NodeState | None:
@@ -263,17 +269,19 @@ class Database:
         """Upsert a session's full history. `label` (set once, on first save) is the
         first user message, shown when listing. Re-saves only bump updated_at + history."""
         blob = json.dumps(history, ensure_ascii=False, default=str)
-        # microsecond precision so re-saving a session within the same wall-clock
-        # second still makes it the latest (what --continue resumes).
-        now = datetime.now(timezone.utc).isoformat()
+        now = utcnow()
+        # `seq` is a monotonic counter (not the wall clock, which ties under a coarse
+        # OS clock) so a just-saved session is always the latest --continue resumes.
+        nxt = "(SELECT COALESCE(MAX(seq), 0) + 1 FROM sessions)"
         with self._conn() as conn:
             conn.execute(
-                """INSERT INTO sessions (id, created_at, updated_at, label, history)
-                   VALUES (?, ?, ?, ?, ?)
+                f"""INSERT INTO sessions (id, created_at, updated_at, label, history, seq)
+                   VALUES (?, ?, ?, ?, ?, {nxt})
                    ON CONFLICT(id) DO UPDATE SET
                        updated_at = excluded.updated_at,
                        label      = COALESCE(sessions.label, excluded.label),
-                       history    = excluded.history""",
+                       history    = excluded.history,
+                       seq        = {nxt}""",
                 (session_id, now, now, label, blob),
             )
 
@@ -289,7 +297,7 @@ class Database:
         """Most recently updated session id (what `--continue` resumes), or None."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT id FROM sessions ORDER BY updated_at DESC, rowid DESC LIMIT 1"
+                "SELECT id FROM sessions ORDER BY seq DESC LIMIT 1"
             ).fetchone()
         return row["id"] if row else None
 
@@ -297,7 +305,7 @@ class Database:
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT id, created_at, updated_at, label FROM sessions "
-                "ORDER BY updated_at DESC LIMIT ?", (limit,)
+                "ORDER BY seq DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
 
