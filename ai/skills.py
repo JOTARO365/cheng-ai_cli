@@ -134,17 +134,26 @@ def catalog(skills: dict[str, Skill], limit: int = CATALOG_CAP) -> str:
     return "\n".join(lines)
 
 
-def search_skills(skills: dict[str, Skill], query: str, limit: int = 5) -> list[dict[str, str]]:
+_STOPWORDS = {
+    "the", "and", "for", "you", "are", "can", "how", "what", "this", "that", "with",
+    "give", "only", "please", "fix", "make", "need", "want", "show", "tell", "from",
+    "input", "output", "return", "function", "code", "empty", "value", "when", "into",
+}
+
+
+def search_skills(skills: dict[str, Skill], query: str, limit: int = 5,
+                  min_hits: int = 1) -> list[dict[str, str]]:
     """Keyword-overlap search over name+description — for find_skill when there are too
-    many skills to list."""
-    words = {w for w in query.lower().split() if len(w) > 1}
+    many skills to list. `min_hits` raises the bar: gating tool-visibility passes a higher
+    value so a single casual word doesn't surface the skill tools to a small model."""
+    words = {w for w in query.lower().split() if len(w) > 2 and w not in _STOPWORDS}
     if not words:
         return []
     scored = []
     for s in skills.values():
         hay = (s.name + " " + s.description).lower()
         hits = sum(1 for w in words if w in hay)
-        if hits:
+        if hits >= min_hits:
             scored.append((hits, s))
     scored.sort(key=lambda x: (-x[0], x[1].name))
     return [{"name": s.name, "description": s.description} for _, s in scored[:limit]]

@@ -5,6 +5,23 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-13 — #1 Tool scoping (Anthropic: fewer tools = smarter small model) ----
+✅ Just-in-time per-turn tool gating in Brain._gate_tools(question): ALWAYS domain tools;
+   memory tools (remember/recall) ONLY on a save/recall intent (_MEMORY_INTENT EN+TH);
+   skill tools (find/load_skill) ONLY when skills on AND a skill STRONGLY matches
+   (search_skills min_hits=2 + stopword filter). self.tools stays the full superset for
+   introspection; _chat(tools=) sends the gated subset. _rebuild_tools() centralizes assembly.
+   FIXED a latent bug: skill tools were injected whenever skills were DISCOVERED, ignoring
+   skills_enabled/--no-skills.
+✅ tests/test_tool_gating.py (5) + search_skills min_hits. 254 tests pass.
+✅ LIVE: default/coding Q → 5 tools (was 9); "จำไว้ว่า…" → 7 (+memory); "account lockout
+   ต้องทำยังไง" → 7 (+skill, the lockout runbook matched) — tools appear only when relevant.
+   Coding prompt via ask() 0/5-blank (old) → 2-3/3 correct now.
+💡 Grounds in Anthropic "Writing tools for agents" (more tools waste cognitive capacity)
+   + our own empty-answer evidence. Harness PLUMBING already matches Claude Code; this is
+   the "make the MODEL smarter" layer (context/tool engineering). Next candidates: #2
+   structured output (Ollama format=json) for routing/classify, #3 model router by difficulty.
+
 ---- 2026-06-13 — Shared sessions (user+cwd) + TUI streaming/spinner/layout ----
 ✅ Session now bound to (user, cwd) — cheng.session_key(user, folder) + session_user(None|User).
    DEFAULT (no flag) auto-binds CLI to its folder+user session; TUI does the SAME →

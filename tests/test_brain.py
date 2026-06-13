@@ -135,7 +135,7 @@ def test_empty_reply_retries_without_tools(db, monkeypatch):
     import ai.brain as brain_mod
     calls = {"n": 0}
 
-    def fake_chat(self, messages, use_tools=True, on_token=None):
+    def fake_chat(self, messages, use_tools=True, on_token=None, tools=None):
         calls["n"] += 1
         if calls["n"] == 1:                       # first call: empty, tools were in scope
             assert use_tools is True
@@ -154,7 +154,7 @@ def test_persistent_empty_falls_back_to_message(db, monkeypatch):
     """If even the no-tools retry is empty, return the fallback, never a blank string."""
     import ai.brain as brain_mod
     monkeypatch.setattr(brain_mod.Brain, "_chat",
-                        lambda self, m, use_tools=True, on_token=None:
+                        lambda self, m, use_tools=True, on_token=None, tools=None:
                         {"role": "assistant", "content": ""})
     b = brain_mod.Brain("http://x", "m", db)
     ans = b.ask(b.new_history(), "hi")

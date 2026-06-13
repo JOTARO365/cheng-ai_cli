@@ -43,6 +43,13 @@ def _has_cjk(text: str) -> bool:
     return bool(_CJK.search(text))
 
 
+# A turn touches memory only when the user asks to save/recall something — otherwise the
+# remember/recall tools are noise to a small model (recent memories are already injected
+# into the system prompt by new_history()). EN + TH intent words.
+_MEMORY_INTENT = re.compile(
+    r"\b(remember|forget|recall|memor|note this|save this)\b|จำ|จด|บันทึก|ลืม|ความจำ", re.I)
+
+
 # Shown when the model produces no usable answer (degenerate empty / tools-exhausted) so
 # the user never sees a blank reply.
 _EMPTY_FALLBACK = ("ยังไม่ได้คำตอบที่ชัดเจน — ลองถามใหม่ หรือถามให้เจาะจงขึ้นอีกนิดนะ "
@@ -86,14 +93,15 @@ class Brain:
         self.model = model
         self.db = db
         self.system = system
-        # every brain also gets the memory tools (remember/recall), handled in _execute
-        self.tools = list(TOOL_SPECS if tools is None else tools) + MEMORY_TOOL_SPECS
+        # tool groups kept separate so each TURN can be sent only the relevant subset
+        # (Anthropic: "more tools waste cognitive capacity" — a small model picks the
+        # wrong tool, or returns nothing, when irrelevant tools crowd its context).
+        self._domain_tools = list(TOOL_SPECS if tools is None else tools)
         # progressive-loading skills (skill.md runbooks) — toggleable
         self._skills = discover_skills(skills_dir)
         self._disabled: set[str] = set()     # individually turned-off skills
-        if self._skills:
-            self.tools = self.tools + SKILL_TOOL_SPECS
         self.skills_enabled = skills_enabled and bool(self._skills)
+        self._rebuild_tools()                # self.tools = full superset (introspection)
         # default dispatcher = the read-only IT-monitor tools over the DB
         self._dispatcher: Dispatcher = dispatcher or (lambda n, a: _db_dispatch(n, a, db))
         self.confirm_tools = set(confirm_tools)
@@ -154,14 +162,30 @@ class Brain:
     def skill_status(self) -> list[tuple[str, bool]]:
         return [(n, n not in self._disabled) for n in self._skills]
 
+    def _rebuild_tools(self) -> None:
+        """self.tools = the FULL superset (domain + memory + skill) — used for
+        introspection / tool_count. The per-turn subset is chosen by _gate_tools."""
+        self.tools = list(self._domain_tools) + list(MEMORY_TOOL_SPECS)
+        if self._skills:
+            self.tools = self.tools + list(SKILL_TOOL_SPECS)
+
+    def _gate_tools(self, question: str) -> list[dict[str, Any]]:
+        """The tools to actually offer THIS turn (just-in-time). Always the domain tools;
+        memory tools only on a save/recall intent; skill tools only when skills are on AND
+        a skill actually matches the question. Trims irrelevant tools that derail a 3B."""
+        sel = list(self._domain_tools)
+        if _MEMORY_INTENT.search(question or ""):
+            sel = sel + list(MEMORY_TOOL_SPECS)
+        if (self.skills_enabled and self._skills
+                and search_skills(self._active(), question or "", min_hits=2)):
+            sel = sel + list(SKILL_TOOL_SPECS)        # only on a STRONG topical match
+        return sel
+
     def load_skills_from(self, skills_dir: Any) -> int:
         """Pull skill.md files from a local directory and enable them. Returns count."""
         self._skills = discover_skills(skills_dir)
-        if self._skills and not any(
-            t["function"]["name"] == "load_skill" for t in self.tools
-        ):
-            self.tools = self.tools + SKILL_TOOL_SPECS
         self.skills_enabled = bool(self._skills)
+        self._rebuild_tools()
         return len(self._skills)
 
     def skill_names(self) -> list[str]:
@@ -198,10 +222,11 @@ class Brain:
         the caller is expected to strip CJK per token); on_compact(before,after) fires
         when old turns were folded into a summary to stay within the context budget."""
         self._compact(history, on_compact)
+        gated = self._gate_tools(question)               # offer only this turn's tools
         history.append({"role": "user", "content": question})
         last: dict[str, Any] = {}
         for _ in range(self.max_steps):
-            last = self._chat(history, on_token=on_token)
+            last = self._chat(history, on_token=on_token, tools=gated)
             history.append(last)
             tool_calls = last.get("tool_calls") or []
             if not tool_calls:
@@ -377,7 +402,8 @@ class Brain:
 
     # ---- Ollama call ------------------------------------------------------
     def _chat(self, messages: list[dict[str, Any]], use_tools: bool = True,
-              on_token: Callable[[str], None] | None = None) -> dict[str, Any]:
+              on_token: Callable[[str], None] | None = None,
+              tools: "list[dict[str, Any]] | None" = None) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -385,7 +411,7 @@ class Brain:
             "options": {"temperature": self.temperature},
         }
         if use_tools:
-            payload["tools"] = self.tools
+            payload["tools"] = tools if tools is not None else self.tools
 
         if on_token is None:
             attempt = 0
