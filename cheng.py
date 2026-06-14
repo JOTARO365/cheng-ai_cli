@@ -618,6 +618,130 @@ def _cmd_users(auth: Auth, user: User, text: str) -> None:
                       f"/users passwd <name> · /users del <name>[/]")
 
 
+@dataclass
+class CmdResult:
+    """Outcome of a slash command for ANY front-end: things to render + what the UI does
+    next. `render` items are Rich renderables / markup strings (they work in both a
+    console and a Textual RichLog). `history` is the (possibly reset) conversation, or
+    None to leave it unchanged. `do` tells the UI what to do beyond rendering."""
+    render: list = field(default_factory=list)
+    do: str = "handled"        # handled | exit | clear | ask | login | passwd | users | summarize
+    history: "list | None" = None
+
+
+def handle_command(action: str, text: str, *, cfg, db: Database, brain, team,
+                   current_user) -> CmdResult:
+    """Run a slash command with NO I/O — return what to show + the next step. Shared by
+    every front-end so command behaviour is written exactly once (the TUI used to
+    re-implement a subset and silently sent unknown ones to the model)."""
+    obj = team or brain
+    out: list = []
+    if action == "exit":
+        return CmdResult(do="exit")
+    if action == "help":
+        return CmdResult([Panel(HELP, box=box.ROUNDED, border_style=CORAL,
+                                expand=False, padding=(1, 2))])
+    if action == "status":
+        return CmdResult([status_panel(db)])
+    if action == "model":
+        parts = text.split(maxsplit=1)
+        avail = obj.list_models()
+        if len(parts) == 1:
+            out.append(f"[{MUTED}]current:[/] [bold]{obj.model}[/]")
+            out.append(f"[{MUTED}]available:[/] "
+                       + (", ".join(avail) or "(none — `ollama pull <model>`)"))
+        else:
+            name = parts[1].strip()
+            team.set_model(name) if team else setattr(brain, "model", name)
+            warn = "" if (not avail or name in avail) else "  [yellow](not pulled yet)[/]"
+            out.append(f"[{MUTED}]model →[/] [bold]{name}[/]{warn}")
+        return CmdResult(out)
+    if action == "remember":
+        parts = text.split(maxsplit=1)
+        if len(parts) == 1:
+            out.append(f"[{MUTED}]usage: /remember <fact>[/]")
+        else:
+            out.append(f"[{CORAL}]✓[/] remembered [dim](#{db.add_memory(parts[1].strip())})[/]")
+        return CmdResult(out)
+    if action == "memory":
+        mems = db.recent_memory(50)
+        if not mems:
+            out.append(f"[{MUTED}](nothing remembered yet — /remember <fact>)[/]")
+        out += [f"  [{MUTED}]#{m['id']}[/] {m['text']}" for m in mems]
+        return CmdResult(out)
+    if action == "skills":
+        toks = text.split()
+        new_hist = None
+        if len(toks) == 1:
+            out.append(f"[{MUTED}]skills:[/] {'on' if obj.skills_enabled else 'off'} (global)")
+            out += [f"  {'[green]on [/]' if en else '[red]off[/]'}  {nm}"
+                    for nm, en in obj.skill_status()]
+        elif toks[1].lower() in ("on", "off"):
+            on = toks[1].lower() == "on"
+            if len(toks) >= 3:
+                for nm in toks[2:]:
+                    ok = obj.set_skill(nm, on)
+                    out.append(f"[{MUTED}]skill[/] {nm} → {'on' if on else 'off'}"
+                               + ("" if ok else "  [yellow](not found)[/]"))
+            else:
+                obj.set_skills_enabled(on)
+                out.append(f"[{MUTED}]skills →[/] {'on' if obj.skills_enabled else 'off'} (all)")
+            new_hist = [] if team else brain.new_history()
+        else:
+            d = text.split(maxsplit=1)[1].strip()
+            out.append(f"[{MUTED}]loaded[/] {obj.load_skills_from(d)} skill(s) from {d}")
+            new_hist = [] if team else brain.new_history()
+        return CmdResult(out, history=new_hist)
+    if action == "whoami":
+        if current_user is not None:
+            out.append(f"  [bold]{current_user.username}[/] [{MUTED}]· {current_user.role}[/]")
+        else:
+            out.append(f"  [bold]{session_user(None)}[/] [{MUTED}]· OS user, not signed in "
+                       f"(use [bold]/login[/] or start with --login for accounts)[/]")
+        return CmdResult(out)
+    if action == "sessions":
+        rows = db.list_sessions(30)
+        if not rows:
+            return CmdResult([f"  [{MUTED}](no saved sessions yet)[/]"])
+        out.append(f"[{CORAL}]saved sessions[/] [{MUTED}](newest first — `--resume <id>`)[/]")
+        for s in rows:
+            when = (s["updated_at"] or "")[:16].replace("T", " ")
+            label = (s["label"] or "—").replace("\n", " ")[:50]
+            out.append(f"  [bold]{s['id']}[/]  [{MUTED}]{when}[/]  {label}")
+        return CmdResult(out)
+    if action == "hooks":
+        hk = getattr(brain, "hooks", None) if not team else None
+        rows = hk.describe() if hk else []
+        if not rows:
+            out.append(f"  [{MUTED}](no hooks active"
+                       f"{' — team mode' if team else ' — started with --no-hooks'})[/]")
+        else:
+            out.append(f"[{CORAL}]active hooks[/] [{MUTED}](guard points around tool calls)[/]")
+            out += [f"  [{MUTED}]{r}[/]" for r in rows]
+        return CmdResult(out)
+    if action == "usage":
+        brains = team.brains() if (team and hasattr(team, "brains")) else ([brain] if brain else [])
+        tot = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "eval_ms": 0.0}
+        for b in brains:
+            for k in tot:
+                tot[k] += b.usage_total.get(k, 0)
+        secs = tot["eval_ms"] / 1000.0
+        tps = round(tot["completion_tokens"] / secs, 1) if secs else 0.0
+        return CmdResult([Panel(Text.from_markup(
+            f"  [{MUTED}]model[/]   {cfg.ollama_model}\n"
+            f"  [{MUTED}]calls[/]   {tot['calls']}\n"
+            f"  [{MUTED}]prompt[/]  {tot['prompt_tokens']:,} tokens\n"
+            f"  [{MUTED}]output[/]  {tot['completion_tokens']:,} tokens\n"
+            f"  [{MUTED}]speed[/]   {tps} tok/s [{MUTED}](generation)[/]"),
+            title=f"[{CORAL}]usage · this session[/]", title_align="left",
+            box=box.ROUNDED, border_style=MUTED, expand=False, padding=(0, 1))])
+    if action == "clear":
+        return CmdResult([f"[dim cyan]context cleared.[/dim cyan]"], do="clear",
+                         history=([] if team else brain.new_history()))
+    # login / passwd / users / summarize / ask → the UI drives these (prompts, turn loop)
+    return CmdResult(do=action)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="CHENG AI CLI — SME IT Agent")
     parser.add_argument("--ask", metavar="QUESTION",
@@ -842,72 +966,36 @@ def main() -> None:
             continue
 
         action = dispatch_command(text)
-        if action == "exit":
+        res = handle_command(action, text, cfg=cfg, db=db, brain=brain, team=team,
+                             current_user=current_user)
+        for item in res.render:
+            console.print(item)
+        if res.history is not None:
+            history = res.history
+        if res.do == "exit":
             console.print("[dim cyan]session ended.[/dim cyan]")
             break
-        if action == "help":
-            console.print(Panel(HELP, box=box.ROUNDED, border_style=CORAL,
-                                expand=False, padding=(1, 2)))
+        if res.do == "clear":
+            if not team:
+                db.delete_session(sess_id)               # wipe THIS folder's saved context
             continue
-        if action == "status":
-            show_status(db)
+        if res.do == "handled":
             continue
-        if action == "model":
-            parts = text.split(maxsplit=1)
-            avail = team.list_models() if team else brain.list_models()
-            if len(parts) == 1:
-                cur = team.model if team else brain.model
-                console.print(f"[{MUTED}]current:[/] [bold]{cur}[/]")
-                console.print(f"[{MUTED}]available:[/] "
-                              + (", ".join(avail) or "(none — `ollama pull <model>`)"))
+        if res.do == "login":
+            if current_user is not None:
+                console.print(f"  [{MUTED}]already signed in as [bold]{current_user.username}[/][/]")
             else:
-                name = parts[1].strip()
-                if team:
-                    team.set_model(name)
-                else:
-                    brain.model = name
-                warn = "" if (not avail or name in avail) else "  [yellow](not pulled yet)[/]"
-                console.print(f"[{MUTED}]model →[/] [bold]{name}[/]{warn}")
+                current_user = login_gate(db)            # sign in mid-session
             continue
-        if action == "remember":
-            parts = text.split(maxsplit=1)
-            if len(parts) == 1:
-                console.print(f"[{MUTED}]usage: /remember <fact>[/]")
+        if res.do in ("passwd", "users"):
+            if current_user is None:
+                console.print(f"  [{MUTED}]not signed in â use [bold]/login[/] (or start with --login)[/]")
+            elif res.do == "passwd":
+                _cmd_passwd(auth, current_user)
             else:
-                mid = db.add_memory(parts[1].strip())
-                console.print(f"[{CORAL}]✓[/] remembered [dim](#{mid})[/]")
+                _cmd_users(auth, current_user, text)
             continue
-        if action == "memory":
-            mems = db.recent_memory(50)
-            if not mems:
-                console.print(f"[{MUTED}](nothing remembered yet — /remember <fact>)[/]")
-            for m in mems:
-                console.print(f"  [{MUTED}]#{m['id']}[/] {m['text']}")
-            continue
-        if action == "skills":
-            obj = team if team else brain
-            toks = text.split()
-            if len(toks) == 1:                                   # list + per-skill status
-                console.print(f"[{MUTED}]skills:[/] {'on' if obj.skills_enabled else 'off'} (global)")
-                for nm, en in obj.skill_status():
-                    console.print(f"  {'[green]on [/]' if en else '[red]off[/]'}  {nm}")
-            elif toks[1].lower() in ("on", "off"):
-                on = toks[1].lower() == "on"
-                if len(toks) >= 3:                               # one or more named skills
-                    for nm in toks[2:]:
-                        ok = obj.set_skill(nm, on)
-                        console.print(f"[{MUTED}]skill[/] {nm} → {'on' if on else 'off'}"
-                                      + ("" if ok else "  [yellow](not found)[/]"))
-                else:                                            # all skills
-                    obj.set_skills_enabled(on)
-                    console.print(f"[{MUTED}]skills →[/] {'on' if obj.skills_enabled else 'off'} (all)")
-                history = [] if team else brain.new_history()
-            else:                                                # a directory path → load
-                d = text.split(maxsplit=1)[1].strip()
-                console.print(f"[{MUTED}]loaded[/] {obj.load_skills_from(d)} skill(s) from {d}")
-                history = [] if team else brain.new_history()
-            continue
-        if action == "summarize":
+        if res.do == "summarize":
             parts = text.split(maxsplit=1)
             if len(parts) == 1:
                 console.print(f"[{MUTED}]usage: /summarize <path>[/]")
@@ -925,77 +1013,16 @@ def main() -> None:
                 return Brain.from_config(cfg, db, system=SYSTEM_SUMMARIZER, tools=[],
                                          skills_enabled=False)
 
-            with console.status("[cyan]fan-out summarizing…[/cyan]", spinner="line"):
+            with console.status("[cyan]fan-out summarizingâ¦[/cyan]", spinner="line"):
                 summary, n = fan_out_summarize(content, _factory)
-            console.print(Text.assemble(("⏺ ", CORAL), ("summarize ", "bold"),
-                          (f"{p.name} — {n} chunk(s) across sub-agents", MUTED)))
+            console.print(Text.assemble(("âº ", CORAL), ("summarize ", "bold"),
+                          (f"{p.name} â {n} chunk(s) across sub-agents", MUTED)))
             console.print(Markdown(summary or "_(empty)_"))
             continue
-        if action == "whoami":                       # always works, even without accounts
-            if current_user is not None:
-                console.print(f"  [bold]{current_user.username}[/] [{MUTED}]· "
-                              f"{current_user.role}[/]")
-            else:
-                console.print(f"  [bold]{session_user(None)}[/] [{MUTED}]· OS user, not signed "
-                              f"in (use [bold]/login[/] or start with --login for accounts)[/]")
-            continue
-        if action == "login":
-            if current_user is not None:
-                console.print(f"  [{MUTED}]already signed in as [bold]{current_user.username}[/][/]")
-            else:
-                current_user = login_gate(db)         # sign in mid-session; enables /users, /passwd
-            continue
-        if action in ("passwd", "users"):
-            if current_user is None:
-                console.print(f"  [{MUTED}]not signed in — use [bold]/login[/] "
-                              f"(or start with --login)[/]")
-            elif action == "passwd":
-                _cmd_passwd(auth, current_user)
-            else:
-                _cmd_users(auth, current_user, text)
-            continue
-        if action == "sessions":
-            print_sessions(db)
-            continue
-        if action == "hooks":
-            hk = getattr(brain, "hooks", None) if not team else None
-            rows = hk.describe() if hk else []
-            if not rows:
-                console.print(f"  [{MUTED}](no hooks active"
-                              f"{' — team mode' if team else ' — started with --no-hooks'})[/]")
-            else:
-                console.print(f"[{CORAL}]active hooks[/] [{MUTED}](guard points around tool calls)[/]")
-                for r in rows:
-                    console.print(f"  [{MUTED}]{r}[/]")
-            continue
-        if action == "usage":
-            brains = team.brains() if team and hasattr(team, "brains") else \
-                ([brain] if brain else [])
-            tot = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "eval_ms": 0.0}
-            for b in brains:
-                for k in tot:
-                    tot[k] += b.usage_total.get(k, 0)
-            secs = tot["eval_ms"] / 1000.0
-            tps = round(tot["completion_tokens"] / secs, 1) if secs else 0.0
-            console.print(Panel(Text.from_markup(
-                f"  [{MUTED}]model[/]   {cfg.ollama_model}\n"
-                f"  [{MUTED}]calls[/]   {tot['calls']}\n"
-                f"  [{MUTED}]prompt[/]  {tot['prompt_tokens']:,} tokens\n"
-                f"  [{MUTED}]output[/]  {tot['completion_tokens']:,} tokens\n"
-                f"  [{MUTED}]speed[/]   {tps} tok/s [{MUTED}](generation)[/]"),
-                title=f"[{CORAL}]usage · this session[/]", title_align="left",
-                box=box.ROUNDED, border_style=MUTED, expand=False, padding=(0, 1)))
-            continue
-        if action == "clear":
-            history = [] if team else brain.new_history()
-            if not team:
-                db.delete_session(sess_id)               # wipe THIS folder's saved context
-            console.print("[dim cyan]context cleared.[/dim cyan]")
-            continue
 
-        answer_turn(text, history)
+        answer_turn(text, history)            # res.do == "ask"
         if not team:
-            _autosave(db, sess_id, history)              # persist after each turn
+            _autosave(db, sess_id, history)
 
 
 if __name__ == "__main__":
