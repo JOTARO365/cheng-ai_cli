@@ -22,7 +22,8 @@ from textual.widgets import Footer, Input, RichLog, Static
 from ai.brain import OllamaUnavailable, _CJK
 from config import load_config
 from cheng import (BANNER, HELP, SLASH_CMDS, TAGLINE, _autosave, _summarize,
-                   build_brain, dispatch_command, session_key, session_user)
+                   build_brain, dispatch_command, handle_command, session_key,
+                   session_user)
 from storage.db import Database
 
 CORAL = "#d97757"
@@ -114,49 +115,25 @@ class JotaroTUI(App):
         log = self.query_one("#chat", RichLog)
         log.write(Text.assemble(("❯ ", f"bold {CORAL}"), (text, "bold")))
 
+        # ALL command behaviour comes from the shared handle_command — the TUI just
+        # renders the result + does the front-end actions (exit / clear / ask).
         action = dispatch_command(text)
-        if action == "exit":
+        res = handle_command(action, text, cfg=self.cfg, db=self.db,
+                             brain=self.brain, team=None, current_user=None)
+        for item in res.render:
+            log.write(item)
+        if res.history is not None:
+            self.history = res.history
+        if res.do == "exit":
             self.exit()
-        elif action == "help":
-            log.write(Text.from_markup(HELP))
-        elif action == "status":
-            s = self.db.system_summary()
-            log.write(f"nodes [green]{s['nodes_up']} up[/] / [red]{s['nodes_down']} down[/]"
-                      f" · fails {s['login_fail_users_24h']} · locked {s['locked_accounts_24h']}"
-                      f" · alerts {s['alerts_pending']}")
-        elif action == "memory":
-            mems = self.db.recent_memory(50)
-            log.write("\n".join(f"  #{m['id']} {m['text']}" for m in mems) or "(no memories)")
-        elif action == "remember":
-            parts = text.split(maxsplit=1)
-            if len(parts) == 2:
-                log.write(f"[{CORAL}]✓[/] remembered (#{self.db.add_memory(parts[1].strip())})")
-        elif action == "skills":
-            log.write(f"skills: {'on' if self.brain.skills_enabled else 'off'} "
-                      f"({len(self.brain.skill_names())})  " + ", ".join(self.brain.skill_names()))
-        elif action == "usage":
-            u = self.brain.usage_total
-            secs = u["eval_ms"] / 1000
-            tps = round(u["completion_tokens"] / secs, 1) if secs else 0
-            log.write(f"usage: {u['calls']} calls · {u['prompt_tokens']:,} prompt + "
-                      f"{u['completion_tokens']:,} output tokens · {tps} tok/s")
-        elif action == "sessions":
-            rows = self.db.list_sessions(20)
-            log.write("\n".join(f"  {s['id']}  {(s['label'] or '')[:40]}" for s in rows)
-                      or "(no saved sessions)")
-        elif action == "whoami":
-            log.write(f"  {session_user(None)}  [grey58]· OS user (TUI = monitor, no accounts)[/]")
-        elif action == "model":
-            log.write(f"  model: [b]{self.brain.model}[/]  ·  available: "
-                      + (", ".join(self.brain.list_models()) or "(none)"))
-        elif action == "hooks":
-            log.write("  [grey58](no safety hooks in monitor mode)[/]")
-        elif action == "clear":
-            self.action_clear()
-        elif action == "ask":
+        elif res.do == "clear":
+            self.db.delete_session(self.sess_id)
+            log.clear()
+        elif res.do == "ask":
             self._ask(text)
-        else:   # login / passwd / users / summarize — CLI-only here
-            log.write(f"[grey58]/{action} isn't available in the TUI — use the CLI for that[/]")
+        elif res.do in ("login", "passwd", "users", "summarize"):
+            log.write(Text(f"/{res.do} isn't available in the TUI yet — use the CLI",
+                           style="grey58"))
 
     @work(thread=True)
     def _ask(self, text: str) -> None:
