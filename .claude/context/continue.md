@@ -5,6 +5,24 @@ Project  : ai-agent-cli (SME IT Agent)
 Started  : 2026-06-10
 Updated  : 2026-06-10
 
+---- 2026-06-14 — Code-runner, rebrand, ONLINE policy, + merge decision ----
+✅ ai/code_tools.py: run_python — executes a Python snippet in a separate process
+   (workspace cwd, timeout) → stdout/stderr/exit_code. Confirm-gated (shown verbatim),
+   wired into --workspace. Also fixed fetch_url not routed to web dispatcher. tests/test_code_tools.py (9).
+✅ Rebrand: ASCII wordmark (ANSI-shadow "CHENG AI") as shared BANNER constant (CLI+TUI) +
+   general TAGLINE "your terminal AI agent · monitor · workspace · web · team" (dropped the
+   narrow "SME IT Agent" framing). title_screen renders the banner.
+✅ POLICY FLIP — offline-only → ONLINE-CAPABLE / hybrid (role.md, CLAUDE.md, SYSTEM_CHAT,
+   mode label offline→local). May use internet/cloud/online tools for best result; local
+   Ollama = default + fallback. Kept guardrails: never leak secrets, confirm before sending
+   sensitive data out, LDAP read-only, no auto-fix. 287 tests pass.
+🔭 DECISION (user): MERGE cheng + tui → ONE Textual app (drop prompt_toolkit REPL; --ask
+   headless). Reason: implementing CLI+TUI separately = duplication → recurring TUI bugs
+   (missing commands, no workspace/code-runner). PLAN: (1) cheng_core.AgentSession owns
+   build+command-handling+turn+session (UI-agnostic, returns markup); (2) Textual app uses
+   it for ALL modes/commands/confirm/streaming; (3) cheng.py launches Textual, --ask headless,
+   remove REPL + update launchers/docs. IN PROGRESS — not started in code yet.
+
 ---- 2026-06-14 — UX fixes: slash commands (CLI+TUI), / popup, mode-in-status ----
 ✅ CLI commands: /whoami now works WITHOUT --login (shows OS user via session_user); new
    /login (sign in mid-session → enables /users·/passwd); /user = alias for /users. HELP updated.
