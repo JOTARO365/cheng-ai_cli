@@ -64,6 +64,17 @@ console = Console()
 CORAL = "#d97757"
 MUTED = "grey58"
 
+# ASCII wordmark — shown on launch (shared by the CLI banner + the TUI).
+BANNER = r"""
+ ██████╗██╗  ██╗███████╗███╗   ██╗ ██████╗      █████╗ ██╗
+██╔════╝██║  ██║██╔════╝████╗  ██║██╔════╝     ██╔══██╗██║
+██║     ███████║█████╗  ██╔██╗ ██║██║  ███╗    ███████║██║
+██║     ██╔══██║██╔══╝  ██║╚██╗██║██║   ██║    ██╔══██║██║
+╚██████╗██║  ██║███████╗██║ ╚████║╚██████╔╝    ██║  ██║██║
+ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝     ╚═╝  ╚═╝╚═╝"""
+# General positioning — it's a terminal AI agent now, not only an IT monitor.
+TAGLINE = "your terminal AI agent · monitor · workspace · web · team"
+
 HELP = f"""\
 [{CORAL}]commands[/]
   [bold]/help[/]     show this screen
@@ -183,8 +194,9 @@ def _short(v: object, n: int = 60) -> str:
 
 def title_screen(model: str, online: bool, n_tools: int, mode: str) -> None:
     status = "[green]● online[/]" if online else "[red]● offline[/]"
+    console.print(Text(BANNER, style=f"bold {CORAL}"))
+    console.print(f"  [{MUTED}]{TAGLINE}[/]\n")
     body = Text.from_markup(
-        f"[{CORAL}]✻[/] [bold]CHENG AI[/]  [{MUTED}]· SME IT Agent · local · offline[/]\n\n"
         f"  [{MUTED}]model[/]   {model}   {status}\n"
         f"  [{MUTED}]mode[/]    {mode}\n"
         f"  [{MUTED}]tools[/]   {n_tools} loaded\n\n"

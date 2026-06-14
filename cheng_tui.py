@@ -21,8 +21,8 @@ from textual.widgets import Footer, Input, RichLog, Static
 
 from ai.brain import OllamaUnavailable, _CJK
 from config import load_config
-from cheng import (HELP, SLASH_CMDS, _autosave, _summarize, build_brain,
-                   dispatch_command, session_key, session_user)
+from cheng import (BANNER, HELP, SLASH_CMDS, TAGLINE, _autosave, _summarize,
+                   build_brain, dispatch_command, session_key, session_user)
 from storage.db import Database
 
 CORAL = "#d97757"
@@ -70,9 +70,10 @@ class JotaroTUI(App):
 
     def on_mount(self) -> None:
         self.title = "CHENG AI"
-        self.sub_title = "SME IT Agent · local · offline"
+        self.sub_title = TAGLINE
         log = self.query_one("#chat", RichLog)
-        log.write(Text("✻ CHENG AI", style=f"bold {CORAL}"))
+        log.write(Text(BANNER, style=f"bold {CORAL}"))
+        log.write(Text("  " + TAGLINE, style="grey58"))
         if self._resumed_turns:
             log.write(Text(f"↻ resumed {self._resumed_turns} turn(s) from this folder "
                            f"(shared with the CLI) — context is loaded", style="grey58"))
