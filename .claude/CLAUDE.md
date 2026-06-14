@@ -14,9 +14,11 @@ Do NOT change the rule-engine thresholds or AD/Event-Log logic without
 understanding the full Collector → Rule Engine → AI → Alert flow.
 
 ## PROJECT IN ONE LINE
-A 100% offline (Ollama) CLI "AI IT assistant" that monitors a Windows AD / on-prem
-network and alerts IT *before* users complain. Phase 1 = monitor + alert only,
-NO auto-fix, NO internet, data never leaves the company.
+CHENG AI — a terminal AI agent (monitor · workspace · web · team). It started as a
+local-first IT monitor for a Windows AD / on-prem network (alert IT *before* users
+complain) and is now **online-capable / hybrid**: local Ollama by default, but it MAY
+use the internet / cloud models / online tools for the best result (policy updated
+2026-06-14 — see roles/role.md). Phase 1 core = monitor + alert only, NO auto-fix.
 
 ## CONTINUE.MD UPDATE RULES
 Update .claude/context/continue.md whenever you:
@@ -36,4 +38,4 @@ Update .claude/context/continue.md whenever you:
 Configured in .claude/settings.json:
 - filesystem → browse/edit project files during dev
 - sqlite     → inspect the local event/alert store during dev/debug
-The PRODUCT itself stays offline; MCP is a dev-time convenience only.
+MCP also lets the product reach external tools at runtime (online-capable now).

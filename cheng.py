@@ -682,7 +682,7 @@ def main() -> None:
     web_enabled = web and brain is not None                 # auto web-search fallback on
     subtitle = ("team · security / network / service" if team
                 else f"workspace · {Path(args.workspace).resolve()}" if args.workspace
-                else "read-only · offline")
+                else "read-only · local")
     if current_user is not None:
         subtitle += f" · {current_user.username}"
 
