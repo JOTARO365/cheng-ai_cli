@@ -20,6 +20,8 @@ import os
 import re
 import sys
 import threading
+from dataclasses import dataclass, field
+from typing import Any
 from datetime import datetime
 
 # Force UTF-8 first — this entrypoint prints box-drawing + Thai. (cp874 console would
@@ -209,7 +211,8 @@ def title_screen(model: str, online: bool, n_tools: int, mode: str) -> None:
                       f"and pull the model[/]")
 
 
-def show_status(db: Database) -> None:
+def status_panel(db: Database) -> Panel:
+    """The /status panel — built once, rendered by whichever UI asked for it."""
     s = db.system_summary()
     up, down = s["nodes_up"], s["nodes_down"]
     body = Text.from_markup(
@@ -219,8 +222,12 @@ def show_status(db: Database) -> None:
         f"[{MUTED}]locked[/] {s['locked_accounts_24h']}\n"
         f"  [{MUTED}]alerts[/]   {s['alerts_pending']} pending"
     )
-    console.print(Panel(body, title=f"[{CORAL}]status[/]", title_align="left",
-                        box=box.ROUNDED, border_style=MUTED, expand=False, padding=(0, 1)))
+    return Panel(body, title=f"[{CORAL}]status[/]", title_align="left",
+                 box=box.ROUNDED, border_style=MUTED, expand=False, padding=(0, 1))
+
+
+def show_status(db: Database) -> None:
+    console.print(status_panel(db))
 
 
 def _new_session_id() -> str:
